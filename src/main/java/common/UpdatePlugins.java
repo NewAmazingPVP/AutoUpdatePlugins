@@ -1,9 +1,8 @@
-package newamazingpvp.autoupdateplugins;
+package common;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -11,19 +10,9 @@ import java.net.URL;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class Autoupdateplugins extends JavaPlugin {
-
-    @Override
-    public void onEnable() {
-        String spigotResourceLink = "https://www.spigotmc.org/resources/view-distance-tweaks-1-14-1-19.75164/";
-        String pluginId = extractPluginIdFromLink(spigotResourceLink);
-        String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-        System.out.println("Download URL: " + downloadUrl);
-        updateFloodgate(downloadUrl);
-    }
-
-
-    private String fetchJsonResponse(String apiUrl) {
+public class UpdatePlugins {
+    private String fileLoc;
+    public String fetchJsonResponse(String apiUrl) {
         try {
             URL url = new URL(apiUrl);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -53,7 +42,7 @@ public final class Autoupdateplugins extends JavaPlugin {
     }
 
 
-    private String extractPluginIdFromLink(String spigotResourceLink) {
+    public String extractPluginIdFromLink(String spigotResourceLink) {
         Pattern pattern = Pattern.compile("\\.([0-9]+)/");
         Matcher matcher = pattern.matcher(spigotResourceLink);
         if (matcher.find()) {
@@ -63,12 +52,18 @@ public final class Autoupdateplugins extends JavaPlugin {
         }
     }
 
-    public void updateFloodgate(String link) {
-        String latestVersionUrl;
-        latestVersionUrl = link;
-        String outputFilePath = "plugins/Floodgate.jar";
+    public String fileLocationSaveName(String spigotResourceLink) {
+        Pattern pattern = Pattern.compile("\\resources/([a-z]-).");
+        Matcher matcher = pattern.matcher(spigotResourceLink);
+        if (matcher.find()) {
+            fileLoc = matcher.group(1);
+        }
+    }
 
-        try (InputStream in = new URL(latestVersionUrl).openStream();
+    public void updateFloodgate(String link) {
+        String outputFilePath = "plugins/" + fileLoc;
+
+        try (InputStream in = new URL(link).openStream();
              FileOutputStream out = new FileOutputStream(outputFilePath)) {
             byte[] buffer = new byte[1024];
             int bytesRead;
@@ -79,3 +74,4 @@ public final class Autoupdateplugins extends JavaPlugin {
         }
     }
 }
+
