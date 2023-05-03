@@ -1,0 +1,6 @@
+name: AutoUpdatePlugins
+version: '${project.version}'
+main: newamazingpvp.autoupdateplugins.Autoupdateplugins
+api-version: 1.18
+authors: [ NewAmazingPVP ]
+description: Automatically updates any spigot plugin
