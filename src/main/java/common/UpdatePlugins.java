@@ -11,7 +11,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UpdatePlugins {
-    private String fileLoc;
     public String fetchJsonResponse(String apiUrl) {
         try {
             URL url = new URL(apiUrl);
@@ -52,16 +51,9 @@ public class UpdatePlugins {
         }
     }
 
-    public String fileLocationSaveName(String spigotResourceLink) {
-        Pattern pattern = Pattern.compile("\\resources/([a-z]-).");
-        Matcher matcher = pattern.matcher(spigotResourceLink);
-        if (matcher.find()) {
-            fileLoc = matcher.group(1);
-        }
-    }
 
     public void updateFloodgate(String link) {
-        String outputFilePath = "plugins/" + fileLoc;
+        String outputFilePath = "plugins/Floodgate";
 
         try (InputStream in = new URL(link).openStream();
              FileOutputStream out = new FileOutputStream(outputFilePath)) {
