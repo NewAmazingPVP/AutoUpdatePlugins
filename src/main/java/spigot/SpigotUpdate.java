@@ -20,6 +20,8 @@ public final class SpigotUpdate extends JavaPlugin {
         String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
         System.out.println("Download URL: " + downloadUrl);
         m_updatePlugins.updateFloodgate(downloadUrl);
+        listYML();
+        readList();
     }
 
     public void listYML() {
@@ -40,12 +42,12 @@ public final class SpigotUpdate extends JavaPlugin {
         }
     }
 
-    public void readList(String[] args) {
+    public void readList() {
         Yaml yaml = new Yaml();
         try (FileReader reader = new FileReader("links.yml")) {
             Map<String, String> links = yaml.load(reader);
             for (Map.Entry<String, String> entry : links.entrySet()) {
-                System.out.println(entry.getKey() + " ---- " + entry.getValue());
+                getLogger().info(entry.getKey() + " ---- " + entry.getValue());
             }
         } catch (IOException e) {
             e.printStackTrace();

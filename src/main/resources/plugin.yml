@@ -1,6 +1,6 @@
 name: AutoUpdatePlugins
 version: '1.0'
-main: newamazingpvp.autoupdateplugins.Autoupdateplugins
+main: spigot.SpigotUpdate
 api-version: 1.18
 authors:
   - NewAmazingPVP

@@ -1,1 +1,3 @@
-newamazingpvp\autoupdateplugins\Autoupdateplugins.class
+spigot\SpigotUpdate.class
+bungeecord\BungeeUpdate.class
+common\UpdatePlugins.class
