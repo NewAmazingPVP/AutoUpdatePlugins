@@ -47,10 +47,16 @@ public class UpdatePlugins {
                     for (Map.Entry<String, String> entry : links.entrySet()) {
                         try {
                             System.out.println((entry.getKey() + " ---- " + entry.getValue()));
-                            String spigotResourceLink = entry.getValue();
-                            String pluginId = extractPluginIdFromLink(spigotResourceLink);
-                            String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-                            updatePlugin(downloadUrl, entry.getKey());
+                            boolean containsPhrase = entry.getValue().contains("spigotmc.org");
+                            if(!containsPhrase)
+                            {
+                                updatePlugin(entry.getValue(), entry.getKey());
+                            } else {
+                                String spigotResourceLink = entry.getValue();
+                                String pluginId = extractPluginIdFromLink(spigotResourceLink);
+                                String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
+                                updatePlugin(downloadUrl, entry.getKey());
+                            }
                         } catch (NullPointerException ignored) {
                         }
                     }
