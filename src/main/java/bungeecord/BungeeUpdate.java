@@ -1,19 +1,37 @@
 package bungeecord;
 
-import org.bukkit.plugin.java.JavaPlugin;
+import net.md_5.bungee.api.plugin.Plugin;
 import common.UpdatePlugins;
 
-public final class BungeeUpdate extends JavaPlugin {
+import java.io.File;
+import java.io.IOException;
+
+public final class BungeeUpdate extends Plugin {
 
     private UpdatePlugins m_updatePlugins;
+    private File myFile;
 
     @Override
     public void onEnable() {
-        String spigotResourceLink = "https://www.spigotmc.org/resources/view-distance-tweaks-1-14-1-19.75164/";
-        String pluginId = m_updatePlugins.extractPluginIdFromLink(spigotResourceLink);
-        String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-        System.out.println("Download URL: " + downloadUrl);
-        m_updatePlugins.updateFloodgate(downloadUrl);
+        m_updatePlugins = new UpdatePlugins();
+        File dataFolder = getDataFolder();
+
+        if (!dataFolder.exists()) {
+            dataFolder.mkdirs();
+        }
+
+        myFile = new File(dataFolder, "list.yml");
+        if (!myFile.exists()) {
+            try {
+                myFile.createNewFile();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        if(myFile.exists()) {
+            m_updatePlugins.readList(myFile);
+        }
     }
 }
 

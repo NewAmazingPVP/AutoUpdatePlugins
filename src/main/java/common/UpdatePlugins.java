@@ -1,45 +1,14 @@
 package common;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
-import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UpdatePlugins {
-    public String fetchJsonResponse(String apiUrl) {
-        try {
-            URL url = new URL(apiUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Accept", "application/json");
-
-            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-            String inputLine;
-            StringBuilder content = new StringBuilder();
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
-            in.close();
-            connection.disconnect();
-            return content.toString();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "";
-        }
-    }
-
-    private String extractFileUrl(String jsonResponse) {
-        JsonElement jsonElement = JsonParser.parseString(jsonResponse);
-        JsonObject jsonObject = jsonElement.getAsJsonObject();
-        JsonObject fileObject = jsonObject.getAsJsonObject("file");
-        return fileObject.get("url").getAsString();
-    }
-
 
     public String extractPluginIdFromLink(String spigotResourceLink) {
         Pattern pattern = Pattern.compile("\\.([0-9]+)/");
@@ -51,9 +20,8 @@ public class UpdatePlugins {
         }
     }
 
-
-    public void updateFloodgate(String link) {
-        String outputFilePath = "plugins/Floodgate";
+    public void updatePlugin(String link, String fileName) {
+        String outputFilePath = "plugins/" + fileName + ".jar";
 
         try (InputStream in = new URL(link).openStream();
              FileOutputStream out = new FileOutputStream(outputFilePath)) {
@@ -63,6 +31,33 @@ public class UpdatePlugins {
                 out.write(buffer, 0, bytesRead);
             }
         } catch (IOException ignored) {
+        }
+    }
+
+    public void readList(File myFile) {
+        if (myFile.length() == 0) {
+            System.out.println("File is empty. Please put FileSaveName: [link to plugin]");
+        } else {
+            Yaml yaml = new Yaml();
+            try (FileReader reader = new FileReader(myFile)) {
+                Map<String, String> links = yaml.load(reader);
+                if (links == null) {
+                    System.out.println("No data in file. Aborting readList operation.");
+                } else {
+                    for (Map.Entry<String, String> entry : links.entrySet()) {
+                        try {
+                            System.out.println((entry.getKey() + " ---- " + entry.getValue()));
+                            String spigotResourceLink = entry.getValue();
+                            String pluginId = extractPluginIdFromLink(spigotResourceLink);
+                            String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
+                            updatePlugin(downloadUrl, entry.getKey());
+                        } catch (NullPointerException ignored) {
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 }
