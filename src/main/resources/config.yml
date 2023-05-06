@@ -1,1 +1,4 @@
-# Plugins Updates
+# Plugin Updates Configuration
+updates:
+  interval: 120 # Time between period plugins updates in minutes
+  bootTime: 100 # Delay in ticks after server startup before updating plugins (Don't change this unless plugins are causing errors by installing before they load)

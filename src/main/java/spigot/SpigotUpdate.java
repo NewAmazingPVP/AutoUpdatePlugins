@@ -1,6 +1,7 @@
 package spigot;
 
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import common.UpdatePlugins;
 
@@ -11,16 +12,14 @@ public final class SpigotUpdate extends JavaPlugin {
 
     private UpdatePlugins m_updatePlugins;
     private File myFile;
+    private FileConfiguration config;
 
     @Override
     public void onEnable() {
         m_updatePlugins = new UpdatePlugins();
+        config = getConfig();
+        saveDefaultConfig();
         File dataFolder = getDataFolder();
-
-        if (!dataFolder.exists()) {
-            dataFolder.mkdirs();
-        }
-
         myFile = new File(dataFolder, "list.yml");
         if (!myFile.exists()) {
             try {
@@ -29,17 +28,18 @@ public final class SpigotUpdate extends JavaPlugin {
                 throw new RuntimeException(e);
             }
         }
-
         periodUpdatePlugins();
     }
 
     public void periodUpdatePlugins(){
+        int interval = config.getInt("updates.interval");
+        long bootTime = config.getInt("updates.bootTime");
         Bukkit.getScheduler().runTaskTimer(this, new Runnable() {
             @Override
             public void run(){
                 m_updatePlugins.readList(myFile);
             }
-        }, 0L, 20L * 60L * 1);
+        }, bootTime, 20L * 60L * interval);
     }
 }
 
