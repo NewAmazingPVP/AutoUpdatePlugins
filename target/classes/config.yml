@@ -1,4 +1,21 @@
 # Plugin Updates Configuration
 updates:
-  interval: 120 # Time between period plugins updates in minutes
-  bootTime: 100 # Delay in ticks after server startup before updating plugins (Don't change this unless plugins are causing errors by installing before they load)
+  # Time between period plugins updates in minutes
+  interval: 120
+
+  # Delay in ticks after server startup before updating plugins
+  # (Don't change this unless plugins are causing errors by installing before they load)
+  bootTime: 100
+
+# Plugins List Configuration
+# Go to the list.yml file created in this same directory and put the plugin information that you want to periodically update in this format:
+# {fileSaveName}: {link.to.plugin}
+#
+# Examples:
+#   ViaVersion: https://www.spigotmc.org/resources/viaversion.19254/
+#   Geyser: https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+#
+# The plugin takes in a Spigot resource link or a direct link that automatically redirects and downloads the latest release.
+# For example:
+#   - The first example downloads the plugin from https://www.spigotmc.org/resources/viaversion.19254/ and names it ViaVersion (the .jar extension will be added automatically when downloaded)
+#   - The second example downloads the Geyser Spigot version and saves it as Geyser
