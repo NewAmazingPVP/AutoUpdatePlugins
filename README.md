@@ -1,6 +1,8 @@
 # AutoUpdatePlugins
 AutoUpdatePlugins is a Spigot/Bungeecord plugin that automates the updating process for any plugin you want!
 
+Spigot link: https://www.spigotmc.org/resources/autoupdateplugins.109683/
+
 # Features
 - Compatible with Minecraft versions 1.8 and higher for both Spigot and Bungeecord, including the latest versions.
 
