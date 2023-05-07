@@ -39,11 +39,11 @@ public final class BungeeUpdate extends Plugin {
         int interval = config.getInt("updates.interval") * 60;
         long bootTime = config.getInt("updates.bootTime");
         long bootDelay = (long) (bootTime * 0.05);
-        getProxy().getScheduler().schedule(this, new Runnable() {
-            @Override
-            public void run(){
+
+        getProxy().getScheduler().schedule(this, () -> {
+            getProxy().getScheduler().runAsync(this, () -> {
                 m_updatePlugins.readList(myFile);
-            }
+            });
         }, bootDelay, interval, TimeUnit.SECONDS);
     }
 
