@@ -55,6 +55,10 @@
 
     <repositories>
         <repository>
+            <id>inventive-repo</id>
+            <url>https://repo.inventivetalent.org/content/groups/public/</url>
+        </repository>
+        <repository>
             <id>spigotmc-repo</id>
             <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
         </repository>
@@ -91,6 +95,11 @@
             <artifactId>bungeecord-api</artifactId>
             <version>1.8-SNAPSHOT</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.inventivetalent.Spiget-update</groupId>
+            <artifactId>bukkit</artifactId>
+            <version>1.4.2-SNAPSHOT</version>
         </dependency>
     </dependencies>
 </project>
