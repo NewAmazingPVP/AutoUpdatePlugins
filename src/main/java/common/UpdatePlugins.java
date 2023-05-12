@@ -1,7 +1,5 @@
 package common;
 
-import org.inventivetalent.update.spiget.SpigetUpdate;
-import org.inventivetalent.update.spiget.comparator.VersionComparator;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
