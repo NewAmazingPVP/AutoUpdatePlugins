@@ -1,5 +1,7 @@
 package common;
 
+import org.inventivetalent.update.spiget.SpigetUpdate;
+import org.inventivetalent.update.spiget.comparator.VersionComparator;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
@@ -9,7 +11,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UpdatePlugins {
-
     public String extractPluginIdFromLink(String spigotResourceLink) {
         Pattern pattern = Pattern.compile("\\.([0-9]+)/");
         Matcher matcher = pattern.matcher(spigotResourceLink);
