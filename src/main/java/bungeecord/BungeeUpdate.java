@@ -20,6 +20,7 @@ public final class BungeeUpdate extends Plugin {
 
     @Override
     public void onEnable() {
+        new Metrics(this, 18456);
         m_updatePlugins = new UpdatePlugins();
         saveDefaultConfig();
         loadConfiguration();

@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
 @Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "2.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
@@ -25,16 +24,19 @@ public final class VelocityUpdate {
     private ProxyServer proxy;
     private File myFile;
     private Path dataDirectory;
+    private final Metrics.Factory metricsFactory;
 
     @Inject
-    public VelocityUpdate(ProxyServer proxy, @DataDirectory Path dataDirectory) {
+    public VelocityUpdate(ProxyServer proxy, @DataDirectory Path dataDirectory, Metrics.Factory metricsFactory) {
         this.proxy = proxy;
         this.dataDirectory = dataDirectory;
-        config = loadConfig();
+        config = loadConfig(dataDirectory);
+        this.metricsFactory = metricsFactory;
     }
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
+        metricsFactory.make(this, 18455);
         m_updatePlugins = new UpdatePlugins();
         myFile = dataDirectory.resolve("list.yml").toFile();
         if (!myFile.exists()) {
@@ -56,8 +58,8 @@ public final class VelocityUpdate {
         }).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
     }
 
-    private Toml loadConfig() {
-        File folder = dataDirectory.toFile();
+    private Toml loadConfig(Path path) {
+        File folder = path.toFile();
         File file = new File(folder, "config.toml");
 
         if (!file.exists()) {
@@ -66,7 +68,7 @@ public final class VelocityUpdate {
             }
             try (InputStream input = getClass().getResourceAsStream("/" + file.getName())) {
                 if (input != null) {
-                    Files.copy(input, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    Files.copy(input, file.toPath());
                 } else {
                     file.createNewFile();
                 }
