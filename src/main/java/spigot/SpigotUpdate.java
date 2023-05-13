@@ -39,7 +39,7 @@ public final class SpigotUpdate extends JavaPlugin {
             public void run(){
                 m_updatePlugins.readList(myFile);
             }
-        }, bootTime, 20L * 60L * interval);
+        }, bootTime*20L, 20L * 60L * interval);
     }
 }
 

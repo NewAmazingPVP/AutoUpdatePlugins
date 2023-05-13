@@ -3,9 +3,9 @@
 # Time between period plugins updates in minutes
 interval = 120
 
-# Delay in seconds after server startup before updating plugins
+# Delay in ticks after server startup before updating plugins
 # (Don't change this unless plugins are causing errors by installing before they load)
-bootTime = 5
+bootTime = 100
 
 # Plugins List Configuration
 # Go to the list.yml file created in this same directory and put the plugin information that you want to periodically update in this format:

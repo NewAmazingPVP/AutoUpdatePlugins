@@ -14,26 +14,29 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 
-@Plugin(id = "autoupdateplugins",name = "AutoUpdatePlugins",version = "2.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/",authors = "NewAmazingPVP")
+@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "2.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
     private UpdatePlugins m_updatePlugins;
     private Toml config;
     private ProxyServer proxy;
     private File myFile;
+    private Path dataDirectory;
+
     @Inject
     public VelocityUpdate(ProxyServer proxy, @DataDirectory Path dataDirectory) {
         this.proxy = proxy;
-        config = loadConfig(dataDirectory);
+        this.dataDirectory = dataDirectory;
+        config = loadConfig();
     }
 
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
         m_updatePlugins = new UpdatePlugins();
-        File dataFolder = proxy.
-        myFile = new File(dataFolder, "list.yml");
+        myFile = dataDirectory.resolve("list.yml").toFile();
         if (!myFile.exists()) {
             try {
                 myFile.createNewFile();
@@ -44,7 +47,7 @@ public final class VelocityUpdate {
         periodUpdatePlugins();
     }
 
-    public void periodUpdatePlugins(){
+    public void periodUpdatePlugins() {
         long interval = config.getLong("updates.interval");
         long bootTime = config.getLong("updates.bootTime");
 
@@ -53,8 +56,8 @@ public final class VelocityUpdate {
         }).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
     }
 
-    private Toml loadConfig(Path path) {
-        File folder = path.toFile();
+    private Toml loadConfig() {
+        File folder = dataDirectory.toFile();
         File file = new File(folder, "config.toml");
 
         if (!file.exists()) {
@@ -63,7 +66,7 @@ public final class VelocityUpdate {
             }
             try (InputStream input = getClass().getResourceAsStream("/" + file.getName())) {
                 if (input != null) {
-                    Files.copy(input, file.toPath());
+                    Files.copy(input, file.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 } else {
                     file.createNewFile();
                 }
@@ -74,5 +77,4 @@ public final class VelocityUpdate {
         }
         return new Toml().read(file);
     }
-
 }

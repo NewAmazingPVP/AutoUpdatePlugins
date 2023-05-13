@@ -1,5 +1,6 @@
-spigot\SpigotUpdate$2.class
 spigot\SpigotUpdate$1.class
+velocity\VelocityUpdate.class
 spigot\SpigotUpdate.class
+velocity-plugin.json
 bungeecord\BungeeUpdate.class
 common\UpdatePlugins.class
