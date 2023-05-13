@@ -16,6 +16,7 @@ public final class SpigotUpdate extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        new Metrics(this, 18454);
         m_updatePlugins = new UpdatePlugins();
         config = getConfig();
         saveDefaultConfig();
