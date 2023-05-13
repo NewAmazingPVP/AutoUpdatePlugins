@@ -1,20 +1,18 @@
 # AutoUpdatePlugins
-AutoUpdatePlugins is a Spigot/Bungeecord plugin that automates the updating process for any plugin you want!
+AutoUpdatePlugins is a Spigot/Bungeecord/Velocity plugin that automates the updating process for any plugin you want!
 
 Spigot link: https://www.spigotmc.org/resources/autoupdateplugins.109683/
 
 # Features
-- Compatible with Minecraft versions 1.8 and higher for both Spigot and Bungeecord, including the latest versions.
+- Compatible with Minecraft versions 1.8 and higher for Spigot, Velocity, and Bungeecord, including the latest versions.
 
 - Automatically downloads the latest release of Spigotmc.org resource links provided by the user.
 
 - Configurable update interval in the config.yml file.
 
-- list.yml file for specifying which plugins to download and their respective links.
+- list.yml file for specifying which plugins to download and their respective links. It also allows configuring the plugin jar file name.
 
 # Planned Features
-- Velocity Support
-
 - Support for plugin releases on GitHub and Jenkins
 
 - If you have any suggestions or feature requests, please create a new issue in the project's GitHub repository.
@@ -26,7 +24,7 @@ AutoUpdatePlugins will update specified plugins in list.yml at the interval set 
 Configure list.yml to specify plugins to update:
 # Plugins List Configuration:
 Go to the list.yml file created in this same directory and put the plugin information that you want to periodically update in this format:
- - {fileSaveName}: {link.to.plugin}
+ - {pluginJarfileSaveName}: {link.to.plugin}
 
 Examples:
 
