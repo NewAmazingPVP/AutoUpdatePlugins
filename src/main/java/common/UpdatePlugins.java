@@ -1,5 +1,7 @@
 package common;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
@@ -7,6 +9,9 @@ import java.net.URL;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 
 public class UpdatePlugins {
     public String extractPluginIdFromLink(String spigotResourceLink) {
@@ -33,7 +38,7 @@ public class UpdatePlugins {
         }
     }
 
-    public void readList(File myFile) {
+    public void readList(File myFile) throws IOException {
         if (myFile.length() == 0) {
             System.out.println("File is empty. Please put FileSaveName: [link to plugin]");
         } else {
@@ -47,23 +52,57 @@ public class UpdatePlugins {
                         try {
                             System.out.println((entry.getKey() + " ---- " + entry.getValue()));
                             boolean containsPhrase = entry.getValue().contains("spigotmc.org");
-                            if(!containsPhrase)
-                            {
-                                updatePlugin(entry.getValue(), entry.getKey());
-                            } else {
+                            boolean githubPhrase = entry.getValue().contains("github.com");
+                            if (containsPhrase) {
                                 String spigotResourceLink = entry.getValue();
                                 String pluginId = extractPluginIdFromLink(spigotResourceLink);
                                 String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
                                 updatePlugin(downloadUrl, entry.getKey());
+                            } else if (githubPhrase) {
+                                String inputUrl = entry.getValue();
+                                String repoPath = null;
+
+                                try {
+                                    URL url = new URL(inputUrl);
+                                    Pattern pattern = Pattern.compile("^/([^/]+)/([^/]+)");
+                                    Matcher matcher = pattern.matcher(url.getPath());
+
+                                    if (matcher.find()) {
+                                        repoPath = matcher.group(0);
+                                    } else {
+                                        System.out.println("Repository path not found.");
+                                    }
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                                String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
+                                ObjectMapper objectMapper = new ObjectMapper();
+                                JsonNode node = objectMapper.readTree(new URL(apiUrl));
+
+                                String downloadUrl = null;
+                                for (JsonNode asset : node.get("assets")) {
+                                    if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
+                                        downloadUrl = asset.get("browser_download_url").asText();
+                                        break;
+                                    }
+                                }
+
+                                if (downloadUrl == null) {
+                                    System.out.println("Github link doesn't work" + entry.getValue());
+                                } else {
+                                    System.out.println("Download URL: " + downloadUrl);
+                                    updatePlugin(downloadUrl, entry.getKey());
+                                }
+                            } else {
+                                updatePlugin(entry.getValue(), entry.getKey());
                             }
                         } catch (NullPointerException ignored) {
                         }
                     }
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
             }
         }
     }
 }
+
 

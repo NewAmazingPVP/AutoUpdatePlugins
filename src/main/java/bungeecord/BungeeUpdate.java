@@ -42,7 +42,11 @@ public final class BungeeUpdate extends Plugin {
 
         getProxy().getScheduler().schedule(this, () -> {
             getProxy().getScheduler().runAsync(this, () -> {
-                m_updatePlugins.readList(myFile);
+                try {
+                    m_updatePlugins.readList(myFile);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             });
         }, bootTime, interval, TimeUnit.SECONDS);
     }

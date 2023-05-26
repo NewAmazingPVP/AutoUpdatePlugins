@@ -54,7 +54,11 @@ public final class VelocityUpdate {
         long bootTime = config.getLong("updates.bootTime");
 
         proxy.getScheduler().buildTask(this, () -> {
-            m_updatePlugins.readList(myFile);
+            try {
+                m_updatePlugins.readList(myFile);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
     }
 

@@ -31,6 +31,7 @@
     <orderEntry type="library" scope="PROVIDED" name="Maven: javax.persistence:persistence-api:1.0" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: net.md-5:bungeecord-chat:1.8-SNAPSHOT" level="project" />
     <orderEntry type="library" name="Maven: org.json:json:20230227" level="project" />
+    <orderEntry type="library" name="Maven: org.jsoup:jsoup:1.16.1" level="project" />
     <orderEntry type="library" name="Maven: com.google.code.gson:gson:2.10.1" level="project" />
     <orderEntry type="library" name="Maven: org.yaml:snakeyaml:2.0" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: net.md-5:bungeecord-api:1.8-SNAPSHOT" level="project" />
@@ -63,5 +64,8 @@
     <orderEntry type="library" scope="PROVIDED" name="Maven: com.typesafe:config:1.4.0" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.spongepowered:configurate-yaml:3.7.2" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.spongepowered:configurate-gson:3.7.2" level="project" />
+    <orderEntry type="library" name="Maven: com.fasterxml.jackson.core:jackson-databind:2.15.1" level="project" />
+    <orderEntry type="library" name="Maven: com.fasterxml.jackson.core:jackson-annotations:2.15.1" level="project" />
+    <orderEntry type="library" name="Maven: com.fasterxml.jackson.core:jackson-core:2.15.1" level="project" />
   </component>
 </module>
