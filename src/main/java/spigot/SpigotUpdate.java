@@ -38,7 +38,11 @@ public final class SpigotUpdate extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, new Runnable() {
             @Override
             public void run(){
-                m_updatePlugins.readList(myFile);
+                try {
+                    m_updatePlugins.readList(myFile);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
         }, bootTime*20L, 20L * 60L * interval);
     }
