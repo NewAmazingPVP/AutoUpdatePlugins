@@ -5,13 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 
 public class UpdatePlugins {
     public String extractPluginIdFromLink(String spigotResourceLink) {
@@ -20,6 +18,19 @@ public class UpdatePlugins {
         if (matcher.find()) {
             return matcher.group(1);
         } else {
+            return "";
+        }
+    }
+
+    public String getRepoLocation(String inputUrl) throws MalformedURLException {
+        URL url = new URL(inputUrl);
+        Pattern pattern = Pattern.compile("^/([^/]+)/([^/]+)");
+        Matcher matcher = pattern.matcher(url.getPath());
+
+        if (matcher.find()) {
+            return matcher.group(0);
+        } else {
+            System.out.println("Repository path not found.");
             return "";
         }
     }
@@ -53,6 +64,7 @@ public class UpdatePlugins {
                             System.out.println((entry.getKey() + " ---- " + entry.getValue()));
                             boolean containsPhrase = entry.getValue().contains("spigotmc.org");
                             boolean githubPhrase = entry.getValue().contains("github.com");
+                            boolean jenkinsPhrase = entry.getValue().contains("https://ci.");
                             if (containsPhrase) {
                                 String spigotResourceLink = entry.getValue();
                                 String pluginId = extractPluginIdFromLink(spigotResourceLink);
@@ -60,21 +72,7 @@ public class UpdatePlugins {
                                 updatePlugin(downloadUrl, entry.getKey());
                             } else if (githubPhrase) {
                                 String inputUrl = entry.getValue();
-                                String repoPath = null;
-
-                                try {
-                                    URL url = new URL(inputUrl);
-                                    Pattern pattern = Pattern.compile("^/([^/]+)/([^/]+)");
-                                    Matcher matcher = pattern.matcher(url.getPath());
-
-                                    if (matcher.find()) {
-                                        repoPath = matcher.group(0);
-                                    } else {
-                                        System.out.println("Repository path not found.");
-                                    }
-                                } catch (Exception e) {
-                                    e.printStackTrace();
-                                }
+                                String repoPath = getRepoLocation(inputUrl);
                                 String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
                                 ObjectMapper objectMapper = new ObjectMapper();
                                 JsonNode node = objectMapper.readTree(new URL(apiUrl));
