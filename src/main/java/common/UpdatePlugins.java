@@ -1,12 +1,19 @@
 package common;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
+import java.net.http.HttpClient;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -66,30 +73,45 @@ public class UpdatePlugins {
                             boolean githubPhrase = entry.getValue().contains("github.com");
                             boolean jenkinsPhrase = entry.getValue().contains("https://ci.");
                             if (containsPhrase) {
-                                String spigotResourceLink = entry.getValue();
-                                String pluginId = extractPluginIdFromLink(spigotResourceLink);
-                                String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-                                updatePlugin(downloadUrl, entry.getKey());
+                                try {
+                                    String spigotResourceLink = entry.getValue();
+                                    String pluginId = extractPluginIdFromLink(spigotResourceLink);
+                                    String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
+                                    updatePlugin(downloadUrl, entry.getKey());
+                                } catch (Exception e) {
+                                    System.out.println("Failed to download plugin from spigot, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
+                                }
                             } else if (githubPhrase) {
-                                String inputUrl = entry.getValue();
-                                String repoPath = getRepoLocation(inputUrl);
-                                String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
-                                ObjectMapper objectMapper = new ObjectMapper();
-                                JsonNode node = objectMapper.readTree(new URL(apiUrl));
+                                try {
+                                    String inputUrl = entry.getValue();
+                                    String repoPath = getRepoLocation(inputUrl);
+                                    String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
+                                    ObjectMapper objectMapper = new ObjectMapper();
+                                    JsonNode node = objectMapper.readTree(new URL(apiUrl));
 
-                                String downloadUrl = null;
-                                for (JsonNode asset : node.get("assets")) {
-                                    if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
-                                        downloadUrl = asset.get("browser_download_url").asText();
-                                        break;
+                                    String downloadUrl = null;
+                                    for (JsonNode asset : node.get("assets")) {
+                                        if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
+                                            downloadUrl = asset.get("browser_download_url").asText();
+                                            break;
+                                        }
                                     }
+                                    updatePlugin(downloadUrl, entry.getKey());
+                                } catch (IOException e) {
+                                    System.out.println("Failed to download plugin from github, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
                                 }
 
-                                if (downloadUrl == null) {
-                                    System.out.println("Github link doesn't work" + entry.getValue());
-                                } else {
-                                    System.out.println("Download URL: " + downloadUrl);
-                                    updatePlugin(downloadUrl, entry.getKey());
+                            } else if (jenkinsPhrase){
+                                try {
+                                    String pluginLink = entry.getValue();
+                                    ObjectMapper objectMapper = new ObjectMapper();
+                                    JsonNode node = objectMapper.readTree(new URL(pluginLink + "lastSuccessfulBuild/api/json"));
+                                    String artifactName = node.get("artifacts").get(0).get("fileName").asText();
+                                    String artifactUrl = pluginLink + node.get("number").asText() + "/artifact/build/libs/" + artifactName;
+
+                                    updatePlugin(artifactUrl, entry.getKey());
+                                } catch (IOException e) {
+                                    System.out.println("Failed to download plugin from jenkins, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
                                 }
                             } else {
                                 updatePlugin(entry.getValue(), entry.getKey());
