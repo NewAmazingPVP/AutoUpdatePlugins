@@ -16,7 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 
-@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "2.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
+@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "3.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
     private UpdatePlugins m_updatePlugins;
