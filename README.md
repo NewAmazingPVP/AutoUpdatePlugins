@@ -6,15 +6,13 @@ Spigot link: https://www.spigotmc.org/resources/autoupdateplugins.109683/
 # Features
 - Compatible with Minecraft versions 1.8 and higher for Spigot, Velocity, and Bungeecord, including the latest versions.
 
-- Automatically downloads the latest release of Spigotmc.org resource links provided by the user.
+- Automatically downloads the latest release of Spigotmc.org resource links, Github plugin links, and Jenkins links provided by the user.
 
 - Configurable update interval in the config.yml file.
 
 - list.yml file for specifying which plugins to download and their respective links. It also allows configuring the plugin jar file name.
 
 # Planned Features
-- Support for plugin releases on GitHub and Jenkins
-
 - If you have any suggestions or feature requests, please create a new issue in the project's GitHub repository.
 
 # Installation
