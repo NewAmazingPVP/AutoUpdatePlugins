@@ -18,6 +18,7 @@ velocity\Metrics$MetricsBase.class
 spigot\Metrics$AdvancedPie.class
 velocity\Metrics$SimplePie.class
 bungeecord\Metrics$CustomChart.class
+velocity\Metrics$1.class
 velocity\Metrics$JsonObjectBuilder$JsonObject.class
 bungeecord\Metrics$SimplePie.class
 spigot\Metrics$SimplePie.class
