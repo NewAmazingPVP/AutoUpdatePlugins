@@ -10,7 +10,7 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
-      <module name="AutoUpdatePlugins" target="16" />
+      <module name="AutoUpdatePlugins" target="1.8" />
     </bytecodeTargetLevel>
   </component>
 </project>

@@ -45,7 +45,9 @@ public class UpdatePlugins {
             while ((bytesRead = in.read(buffer)) != -1) {
                 out.write(buffer, 0, bytesRead);
             }
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            System.out.println("Failed to download plugin: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
