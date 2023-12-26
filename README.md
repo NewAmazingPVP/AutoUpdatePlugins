@@ -12,6 +12,8 @@ Spigot link: https://www.spigotmc.org/resources/autoupdateplugins.109683/
 
 - list.yml file for specifying which plugins to download and their respective links. It also allows configuring the plugin jar file name.
 
+- /update command to update whenever wished (autoupdateplugins.update permission!)
+
 # Planned Features
 - If you have any suggestions or feature requests, please create a new issue in the project's GitHub repository.
 
