@@ -6,6 +6,7 @@ bungeecord\BungeeUpdate.class
 bungeecord\Metrics$MultiLineChart.class
 spigot\Metrics$MultiLineChart.class
 velocity\Metrics$CustomChart.class
+bungeecord\BungeeUpdate$UpdateCommand.class
 velocity\Metrics$Factory.class
 bungeecord\Metrics$DrilldownPie.class
 velocity\Metrics$JsonObjectBuilder.class
@@ -20,7 +21,9 @@ velocity\Metrics$SimplePie.class
 bungeecord\Metrics$CustomChart.class
 velocity\Metrics$1.class
 velocity\Metrics$JsonObjectBuilder$JsonObject.class
+velocity\VelocityUpdate$UpdateCommand.class
 bungeecord\Metrics$SimplePie.class
+spigot\SpigotUpdate$updateCommand.class
 spigot\Metrics$SimplePie.class
 spigot\Metrics.class
 velocity\Metrics.class

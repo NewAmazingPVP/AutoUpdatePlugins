@@ -1,6 +1,12 @@
 name: AutoUpdatePlugins
-version: '3.0'
+version: '4.0'
 main: spigot.SpigotUpdate
 authors:
   - NewAmazingPVP
 description: Automatically updates any spigot plugin
+commands:
+  update:
+    description: Update all plugins in list.yml!
+    usage: /update
+    permission: autoupdateplugins.update
+    default: op
