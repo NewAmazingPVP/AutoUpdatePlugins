@@ -8,6 +8,7 @@
       <item index="3" class="java.lang.String" itemvalue="com.velocitypowered.api.plugin.Plugin" />
     </list>
   </component>
+  <component name="ExternalStorageConfigurationManager" enabled="true" />
   <component name="MavenProjectsManager">
     <option name="originalFiles">
       <list>

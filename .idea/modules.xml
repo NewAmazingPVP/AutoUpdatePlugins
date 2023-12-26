@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/AutoUpdatePlugins.iml" filepath="$PROJECT_DIR$/AutoUpdatePlugins.iml" />
+      <module fileurl="file://$PROJECT_DIR$/autoupdateplugins.iml" filepath="$PROJECT_DIR$/autoupdateplugins.iml" />
     </modules>
   </component>
 </project>
