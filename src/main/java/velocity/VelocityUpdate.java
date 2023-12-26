@@ -1,12 +1,15 @@
 package velocity;
 
 import com.moandjiezana.toml.Toml;
+import com.velocitypowered.api.command.*;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import common.UpdatePlugins;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.ProxyServer;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 import javax.inject.Inject;
 import java.io.File;
@@ -47,6 +50,13 @@ public final class VelocityUpdate {
             }
         }
         periodUpdatePlugins();
+        CommandManager commandManager = proxy.getCommandManager();
+        CommandMeta commandMeta = commandManager.metaBuilder("update")
+                .plugin(this)
+                .build();
+
+        SimpleCommand simpleCommand = new UpdateCommand();
+        commandManager.register(commandMeta, simpleCommand);
     }
 
     public void periodUpdatePlugins() {
@@ -82,5 +92,23 @@ public final class VelocityUpdate {
             }
         }
         return new Toml().read(file);
+    }
+
+    public class UpdateCommand implements SimpleCommand {
+        @Override
+        public boolean hasPermission(final Invocation invocation) {
+            return invocation.source().hasPermission("autoupdateplugins.update");
+        }
+        @Override
+        public void execute(Invocation invocation) {
+            CommandSource source = invocation.source();
+            try {
+                m_updatePlugins.readList(myFile);
+                source.sendMessage(Component.text("Plugins are successfully updating!").color(NamedTextColor.AQUA));
+            } catch (IOException e) {
+                source.sendMessage(Component.text("Plugins failed to update!").color(NamedTextColor.RED));
+                throw new RuntimeException(e);
+            }
+        }
     }
 }

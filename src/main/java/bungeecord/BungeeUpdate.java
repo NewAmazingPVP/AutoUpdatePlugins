@@ -1,5 +1,9 @@
 package bungeecord;
 
+import net.md_5.bungee.api.ChatColor;
+import net.md_5.bungee.api.CommandSender;
+import net.md_5.bungee.api.ProxyServer;
+import net.md_5.bungee.api.plugin.Command;
 import net.md_5.bungee.api.plugin.Plugin;
 import common.UpdatePlugins;
 import net.md_5.bungee.config.Configuration;
@@ -34,6 +38,7 @@ public final class BungeeUpdate extends Plugin {
             }
         }
         periodUpdatePlugins();
+        ProxyServer.getInstance().getPluginManager().registerCommand(this, new UpdateCommand());
     }
 
     public void periodUpdatePlugins(){
@@ -68,6 +73,24 @@ public final class BungeeUpdate extends Plugin {
             config = ConfigurationProvider.getProvider(YamlConfiguration.class).load(file);
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public class UpdateCommand extends Command {
+
+        public UpdateCommand() {
+            super("update", "autoupdateplugins.update");
+        }
+
+        @Override
+        public void execute(CommandSender sender, String[] args) {
+            try {
+                m_updatePlugins.readList(myFile);
+                sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
+            } catch (IOException e) {
+                sender.sendMessage(ChatColor.RED + "Plugins failed to update!");
+                throw new RuntimeException(e);
+            }
         }
     }
 }
