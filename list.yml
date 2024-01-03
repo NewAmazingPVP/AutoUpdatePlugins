@@ -18,5 +18,5 @@ SkinsRestorer: https://ci.codemc.io/job/SkinsRestorer/job/SkinsRestorerX-DEV/
 TAB: https://github.com/NEZNAMY/TAB
 ViewDistanceTweaks: https://www.spigotmc.org/resources/view-distance-tweaks.75164/
 ViaVersion-Dev: https://ci.viaversion.com/job/ViaVersion-DEV/
-Worldedit: https://www.curseforge.com/minecraft/mc-mods/worldedit
-Worldguard: https://www.curseforge.com/minecraft/mc-mods/worldguard
+Worldedit: https://dev.bukkit.org/projects/worldedit/
+Worldguard: https://dev.bukkit.org/projects/worldguard/
