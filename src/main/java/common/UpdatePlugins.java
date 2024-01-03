@@ -79,23 +79,25 @@ public class UpdatePlugins {
                         for (Map.Entry<String, String> entry : links.entrySet()) {
                             try {
                                 System.out.println((entry.getKey() + " ---- " + entry.getValue()));
-                                boolean containsPhrase = entry.getValue().contains("spigotmc.org");
-                                boolean githubPhrase = entry.getValue().contains("github.com");
-                                boolean jenkinsPhrase = entry.getValue().contains("https://ci.");
-                                boolean bukkitPhrase = entry.getValue().contains("https://dev.bukkit.org/");
+                                String value = entry.getValue();
+                                boolean containsPhrase = value.contains("spigotmc.org");
+                                boolean githubPhrase = value.contains("github.com");
+                                boolean jenkinsPhrase = value.contains("https://ci.");
+                                boolean bukkitPhrase = value.contains("https://dev.bukkit.org/");
+                                if(!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase | bukkitPhrase)){
+                                    value = entry.getValue() + "/";
+                                }
                                 if (containsPhrase) {
                                     try {
-                                        String spigotResourceLink = entry.getValue();
-                                        String pluginId = extractPluginIdFromLink(spigotResourceLink);
+                                        String pluginId = extractPluginIdFromLink(value);
                                         String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
                                         updatePlugin(downloadUrl, entry.getKey());
                                     } catch (Exception e) {
-                                        System.out.println("Failed to download plugin from spigot, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
+                                        System.out.println("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
                                 } else if (githubPhrase) {
                                     try {
-                                        String inputUrl = entry.getValue();
-                                        String repoPath = getRepoLocation(inputUrl);
+                                        String repoPath = getRepoLocation(value);
                                         String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         JsonNode node = objectMapper.readTree(new URL(apiUrl));
@@ -109,25 +111,24 @@ public class UpdatePlugins {
                                         }
                                         updatePlugin(downloadUrl, entry.getKey());
                                     } catch (IOException e) {
-                                        System.out.println("Failed to download plugin from github, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
+                                        System.out.println("Failed to download plugin from github, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
 
                                 } else if (jenkinsPhrase){
                                     try {
-                                        String pluginLink = entry.getValue();
                                         ObjectMapper objectMapper = new ObjectMapper();
-                                        JsonNode node = objectMapper.readTree(new URL(pluginLink + "lastSuccessfulBuild/api/json"));
+                                        JsonNode node = objectMapper.readTree(new URL(value + "lastSuccessfulBuild/api/json"));
                                         String artifactName = node.get("artifacts").get(0).get("relativePath").asText();
-                                        String artifactUrl = pluginLink + "lastSuccessfulBuild/artifact/" + artifactName;
+                                        String artifactUrl = value + "lastSuccessfulBuild/artifact/" + artifactName;
 
                                         updatePlugin(artifactUrl, entry.getKey());
                                     } catch (IOException e) {
-                                        System.out.println("Failed to download plugin from jenkins, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
+                                        System.out.println("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
                                 } else if (bukkitPhrase){
-                                    updatePlugin(entry.getValue() + "files/latest", entry.getKey());
+                                    updatePlugin(value + "files/latest", entry.getKey());
                                 } else {
-                                    updatePlugin(entry.getValue(), entry.getKey());
+                                    updatePlugin(value, entry.getKey());
                                 }
                             } catch (NullPointerException ignored) {
                             }
