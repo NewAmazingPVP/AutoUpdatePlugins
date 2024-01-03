@@ -15,8 +15,9 @@ updates:
 #   ViaVersion: https://www.spigotmc.org/resources/viaversion.19254/
 #   Geyser: https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
 #
-# The plugin takes in a Spigot resource link or a direct link that automatically redirects and downloads the latest release.
+# The plugin takes in a Spigot/Jenkins/Bukkit/Github resource link or a direct link that automatically redirects and downloads the latest release.
 # Make sure if it's a spigot resource link that the resource can be directly downloaded on spigot itself and not on an external website
+# For bukkit, jenkins, github links make sure they just point to the project (not the releases just the main project website)
 # For example:
 #   - The first example downloads the plugin from https://www.spigotmc.org/resources/viaversion.19254/ and names it ViaVersion (the .jar extension will be added automatically when downloaded)
 #   - The second example downloads the Geyser Spigot version and saves it as Geyser
