@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
@@ -39,12 +40,24 @@ public class UpdatePlugins {
     public void updatePlugin(String link, String fileName) {
         String outputFilePath = "plugins/" + fileName + ".jar";
 
-        try (InputStream in = new URL(link).openStream();
-             FileOutputStream out = new FileOutputStream(outputFilePath)) {
-            byte[] buffer = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = in.read(buffer)) != -1) {
-                out.write(buffer, 0, bytesRead);
+        try {
+            URL url = new URL(link);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+
+            String domain = url.getHost();
+            if (domain.contains("github.com")) {
+                connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+            } else if (domain.contains("spiget.org")) {
+                connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+            }
+
+            try (InputStream in = connection.getInputStream();
+                 FileOutputStream out = new FileOutputStream(outputFilePath)) {
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, bytesRead);
+                }
             }
         } catch (IOException e) {
             System.out.println("Failed to download plugin: " + e.getMessage());
@@ -69,6 +82,7 @@ public class UpdatePlugins {
                                 boolean containsPhrase = entry.getValue().contains("spigotmc.org");
                                 boolean githubPhrase = entry.getValue().contains("github.com");
                                 boolean jenkinsPhrase = entry.getValue().contains("https://ci.");
+                                boolean bukkitPhrase = entry.getValue().contains("https://dev.bukkit.org/");
                                 if (containsPhrase) {
                                     try {
                                         String spigotResourceLink = entry.getValue();
@@ -103,13 +117,15 @@ public class UpdatePlugins {
                                         String pluginLink = entry.getValue();
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         JsonNode node = objectMapper.readTree(new URL(pluginLink + "lastSuccessfulBuild/api/json"));
-                                        String artifactName = node.get("artifacts").get(0).get("fileName").asText();
-                                        String artifactUrl = pluginLink + node.get("number").asText() + "/artifact/build/libs/" + artifactName;
+                                        String artifactName = node.get("artifacts").get(0).get("relativePath").asText();
+                                        String artifactUrl = pluginLink + "lastSuccessfulBuild/artifact/" + artifactName;
 
                                         updatePlugin(artifactUrl, entry.getKey());
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from jenkins, " + entry.getValue() + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
+                                } else if (bukkitPhrase){
+                                    updatePlugin(entry.getValue() + "files/latest", entry.getKey());
                                 } else {
                                     updatePlugin(entry.getValue(), entry.getKey());
                                 }
