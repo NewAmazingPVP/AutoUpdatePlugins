@@ -21,3 +21,5 @@ bootTime = 5
 # For example:
 #   - The first example downloads the plugin from https://www.spigotmc.org/resources/viaversion.19254/ and names it ViaVersion (the .jar extension will be added automatically when downloaded)
 #   - The second example downloads the Geyser Spigot version and saves it as Geyser
+
+# Example list.yml template here: https://github.com/NewAmazingPVP/AutoUpdatePlugins/blob/main/list.yml
