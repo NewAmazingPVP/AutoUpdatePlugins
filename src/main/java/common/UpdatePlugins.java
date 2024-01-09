@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 
 public class UpdatePlugins {
     public String extractPluginIdFromLink(String spigotResourceLink) {
-        Pattern pattern = Pattern.compile("\\.([0-9]+)/");
+        Pattern pattern = Pattern.compile("([0-9]+)/");
         Matcher matcher = pattern.matcher(spigotResourceLink);
         if (matcher.find()) {
             return matcher.group(1);
