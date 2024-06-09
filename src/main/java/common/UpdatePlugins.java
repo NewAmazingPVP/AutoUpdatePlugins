@@ -2,6 +2,7 @@ package common;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.*;
@@ -118,7 +119,21 @@ public class UpdatePlugins {
                                     try {
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         JsonNode node = objectMapper.readTree(new URL(value + "lastSuccessfulBuild/api/json"));
-                                        String artifactName = node.get("artifacts").get(0).get("relativePath").asText();
+                                        ArrayNode artifacts = (ArrayNode) node.get("artifacts");
+                                        JsonNode selectedArtifact = null;
+                                        for (JsonNode artifact : artifacts) {
+                                            String fileName = artifact.get("fileName").asText();
+                                            if (!fileName.toLowerCase().contains("sources") || !fileName.toLowerCase().contains("javadoc") || !fileName.toLowerCase().contains("legacy")) {
+                                                selectedArtifact = artifact;
+                                                break;
+                                            }
+                                        }
+
+                                        if (selectedArtifact == null && !artifacts.isEmpty()) {
+                                            selectedArtifact = artifacts.get(0);
+                                        }
+
+                                        String artifactName = selectedArtifact.get("relativePath").asText();
                                         String artifactUrl = value + "lastSuccessfulBuild/artifact/" + artifactName;
 
                                         updatePlugin(artifactUrl, entry.getKey());
