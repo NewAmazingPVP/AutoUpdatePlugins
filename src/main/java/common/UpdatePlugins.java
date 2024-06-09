@@ -85,7 +85,10 @@ public class UpdatePlugins {
                                 boolean githubPhrase = value.contains("github.com");
                                 boolean jenkinsPhrase = value.contains("https://ci.");
                                 boolean bukkitPhrase = value.contains("https://dev.bukkit.org/");
-                                if(!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase | bukkitPhrase)){
+                                boolean modrinthPhrase = value.contains("modrinth.com");
+                                boolean curseforgePhrase = value.contains("curseforge.com");
+
+                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase || curseforgePhrase)) {
                                     value = entry.getValue() + "/";
                                 }
                                 if (containsPhrase) {
@@ -115,7 +118,7 @@ public class UpdatePlugins {
                                         System.out.println("Failed to download plugin from github, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
 
-                                } else if (jenkinsPhrase){
+                                } else if (jenkinsPhrase) {
                                     try {
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         JsonNode node = objectMapper.readTree(new URL(value + "lastSuccessfulBuild/api/json"));
@@ -140,9 +143,34 @@ public class UpdatePlugins {
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
-                                } else if (bukkitPhrase){
+                                } else if (bukkitPhrase) {
                                     updatePlugin(value + "files/latest", entry.getKey());
-                                } else {
+                                } else if (modrinthPhrase) {
+                                    try {
+                                        String[] parts = value.split("/");
+                                        String projectId = parts[parts.length - 1];
+                                        String apiUrl = "https://api.modrinth.com/v2/project/" + projectId + "/version";
+                                        ObjectMapper objectMapper = new ObjectMapper();
+                                        ArrayNode versions = (ArrayNode) objectMapper.readTree(new URL(apiUrl));
+                                        JsonNode latestVersion = versions.get(0);
+                                        String downloadUrl = latestVersion.get("files").get(0).get("url").asText();
+                                        updatePlugin(downloadUrl, entry.getKey());
+                                    } catch (IOException e) {
+                                        System.out.println("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+                                    }
+                                }/* else if (curseforgePhrase) {
+                                    try {
+                                        String[] parts = value.split("/");
+                                        String projectId = parts[parts.length - 2];
+                                        String apiUrl = "https://addons-ecs.forgesvc.net/api/v2/addon/" + projectId;
+                                        ObjectMapper objectMapper = new ObjectMapper();
+                                        JsonNode projectInfo = objectMapper.readTree(new URL(apiUrl));
+                                        String downloadUrl = projectInfo.get("latestFiles").get(0).get("downloadUrl").asText();
+                                        updatePlugin(downloadUrl, entry.getKey());
+                                    } catch (IOException e) {
+                                        System.out.println("Failed to download plugin from curseforge, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+                                    }
+                                }*/ else {
                                     updatePlugin(value, entry.getKey());
                                 }
                             } catch (NullPointerException ignored) {
@@ -156,5 +184,3 @@ public class UpdatePlugins {
         });
     }
 }
-
-
