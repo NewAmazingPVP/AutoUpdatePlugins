@@ -167,19 +167,7 @@ public class UpdatePlugins {
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
-                                }/* else if (curseforgePhrase) {
-                                    try {
-                                        String[] parts = value.split("/");
-                                        String projectId = parts[parts.length - 2];
-                                        String apiUrl = "https://addons-ecs.forgesvc.net/api/v2/addon/" + projectId;
-                                        ObjectMapper objectMapper = new ObjectMapper();
-                                        JsonNode projectInfo = objectMapper.readTree(new URL(apiUrl));
-                                        String downloadUrl = projectInfo.get("latestFiles").get(0).get("downloadUrl").asText();
-                                        updatePlugin(downloadUrl, entry.getKey());
-                                    } catch (IOException e) {
-                                        System.out.println("Failed to download plugin from curseforge, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
-                                    }
-                                }*/ else {
+                                } else {
                                     updatePlugin(value, entry.getKey());
                                 }
                             } catch (NullPointerException ignored) {
