@@ -154,8 +154,15 @@ public class UpdatePlugins {
                                         ArrayNode versions = (ArrayNode) objectMapper.readTree(new URL(apiUrl));
                                         JsonNode latestVersion = versions.get(0);
                                         String urlWithId = latestVersion.get("project_id").asText();
-                                        String downloadUrl = "https://api.modrinth.com/v2/project/" + urlWithId + "/version";
-                                        updatePlugin(downloadUrl, entry.getKey());
+                                        String versionUrl = "https://api.modrinth.com/v2/project/" + urlWithId + "/version";
+                                        ArrayNode node = (ArrayNode) objectMapper.readTree(new URL(versionUrl));
+                                        for (JsonNode version : node) {
+                                            if (version.get("loaders").toString().contains("spigot")) {
+                                                String downloadUrl = version.get("files").get(0).get("url").asText();
+                                                updatePlugin(downloadUrl, entry.getKey());
+                                                break;
+                                            }
+                                        }
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
