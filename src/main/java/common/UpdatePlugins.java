@@ -148,12 +148,13 @@ public class UpdatePlugins {
                                 } else if (modrinthPhrase) {
                                     try {
                                         String[] parts = value.split("/");
-                                        String projectId = parts[parts.length - 1];
-                                        String apiUrl = "https://api.modrinth.com/v2/project/" + projectId + "/version";
+                                        String projectName = parts[parts.length - 1];
+                                        String apiUrl = "https://api.modrinth.com/v2/search?query=" + projectName;
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         ArrayNode versions = (ArrayNode) objectMapper.readTree(new URL(apiUrl));
                                         JsonNode latestVersion = versions.get(0);
-                                        String downloadUrl = latestVersion.get("files").get(0).get("url").asText();
+                                        String urlWithId = latestVersion.get("project_id").asText();
+                                        String downloadUrl = "https://api.modrinth.com/v2/project/" + urlWithId + "/version";
                                         updatePlugin(downloadUrl, entry.getKey());
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
