@@ -66,7 +66,7 @@ public class UpdatePlugins {
         }
     }
 
-    public void readList(File myFile) throws IOException {
+    public void readList(File myFile, String platform) throws IOException {
         CompletableFuture.runAsync(() -> {
             if (myFile.length() == 0) {
                 System.out.println("File is empty. Please put FileSaveName: [link to plugin]");
@@ -151,13 +151,16 @@ public class UpdatePlugins {
                                         String projectName = parts[parts.length - 1];
                                         String apiUrl = "https://api.modrinth.com/v2/search?query=" + projectName;
                                         ObjectMapper objectMapper = new ObjectMapper();
-                                        ArrayNode versions = (ArrayNode) objectMapper.readTree(new URL(apiUrl));
-                                        JsonNode latestVersion = versions.get(0);
-                                        String urlWithId = latestVersion.get("project_id").asText();
-                                        String versionUrl = "https://api.modrinth.com/v2/project/" + urlWithId + "/version";
+                                        JsonNode rootNode = objectMapper.readTree(new URL(apiUrl));
+                                        ArrayNode hits = (ArrayNode) rootNode.get("hits");
+                                        JsonNode firstHit = hits.get(0);
+                                        String projectId = firstHit.get("project_id").asText();
+                                        System.out.println("Project ID: " + projectId);
+                                        System.out.println(projectId);
+                                        String versionUrl = "https://api.modrinth.com/v2/project/" + projectId + "/version";
                                         ArrayNode node = (ArrayNode) objectMapper.readTree(new URL(versionUrl));
                                         for (JsonNode version : node) {
-                                            if (version.get("loaders").toString().contains("spigot")) {
+                                            if (version.get("loaders").toString().toLowerCase().contains(platform)) {
                                                 String downloadUrl = version.get("files").get(0).get("url").asText();
                                                 updatePlugin(downloadUrl, entry.getKey());
                                                 break;

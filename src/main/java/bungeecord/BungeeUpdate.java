@@ -48,7 +48,7 @@ public final class BungeeUpdate extends Plugin {
         getProxy().getScheduler().schedule(this, () -> {
             getProxy().getScheduler().runAsync(this, () -> {
                 try {
-                    m_updatePlugins.readList(myFile);
+                    m_updatePlugins.readList(myFile, "bungeecord");
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -85,7 +85,7 @@ public final class BungeeUpdate extends Plugin {
         @Override
         public void execute(CommandSender sender, String[] args) {
             try {
-                m_updatePlugins.readList(myFile);
+                m_updatePlugins.readList(myFile, "bungeecord");
                 sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
             } catch (IOException e) {
                 sender.sendMessage(ChatColor.RED + "Plugins failed to update!");
