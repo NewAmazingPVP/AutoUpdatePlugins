@@ -155,8 +155,6 @@ public class UpdatePlugins {
                                         ArrayNode hits = (ArrayNode) rootNode.get("hits");
                                         JsonNode firstHit = hits.get(0);
                                         String projectId = firstHit.get("project_id").asText();
-                                        System.out.println("Project ID: " + projectId);
-                                        System.out.println(projectId);
                                         String versionUrl = "https://api.modrinth.com/v2/project/" + projectId + "/version";
                                         ArrayNode node = (ArrayNode) objectMapper.readTree(new URL(versionUrl));
                                         for (JsonNode version : node) {
