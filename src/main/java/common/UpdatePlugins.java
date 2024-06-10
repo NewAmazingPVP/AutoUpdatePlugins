@@ -15,6 +15,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UpdatePlugins {
+
     public String extractPluginIdFromLink(String spigotResourceLink) {
         Pattern pattern = Pattern.compile("([0-9]+)/");
         Matcher matcher = pattern.matcher(spigotResourceLink);
@@ -44,13 +45,7 @@ public class UpdatePlugins {
         try {
             URL url = new URL(link);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-
-            String domain = url.getHost();
-            if (domain.contains("github.com")) {
-                connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-            } else if (domain.contains("spiget.org")) {
-                connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-            }
+            connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
 
             try (InputStream in = connection.getInputStream();
                  FileOutputStream out = new FileOutputStream(outputFilePath)) {
@@ -79,16 +74,15 @@ public class UpdatePlugins {
                     } else {
                         for (Map.Entry<String, String> entry : links.entrySet()) {
                             try {
-                                System.out.println((entry.getKey() + " ---- " + entry.getValue()));
+                                System.out.println(entry.getKey() + " ---- " + entry.getValue());
                                 String value = entry.getValue();
                                 boolean containsPhrase = value.contains("spigotmc.org");
                                 boolean githubPhrase = value.contains("github.com");
                                 boolean jenkinsPhrase = value.contains("https://ci.");
                                 boolean bukkitPhrase = value.contains("https://dev.bukkit.org/");
                                 boolean modrinthPhrase = value.contains("modrinth.com");
-                                boolean curseforgePhrase = value.contains("curseforge.com");
 
-                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase || curseforgePhrase)) {
+                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase)) {
                                     value = entry.getValue() + "/";
                                 }
                                 if (containsPhrase) {
@@ -126,7 +120,7 @@ public class UpdatePlugins {
                                         JsonNode selectedArtifact = null;
                                         for (JsonNode artifact : artifacts) {
                                             String fileName = artifact.get("fileName").asText();
-                                            if (!fileName.toLowerCase().contains("sources") || !fileName.toLowerCase().contains("javadoc") || !fileName.toLowerCase().contains("legacy")) {
+                                            if (!fileName.toLowerCase().contains("sources") && !fileName.toLowerCase().contains("javadoc") && !fileName.toLowerCase().contains("legacy")) {
                                                 selectedArtifact = artifact;
                                                 break;
                                             }
