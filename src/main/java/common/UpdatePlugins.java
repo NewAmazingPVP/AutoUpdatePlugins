@@ -188,9 +188,19 @@ public class UpdatePlugins {
                                         String[] parts = value.split("/");
                                         String projectName = parts[parts.length - 1];
                                         String apiUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/latestrelease";
-                                        ObjectMapper objectMapper = new ObjectMapper();
-                                        String latestVersion = objectMapper.readTree(new URL(apiUrl)).asText();
-                                        String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform + "/download";
+                                        URL url = new URL(apiUrl);
+                                        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                                        connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+
+                                        StringBuilder response = new StringBuilder();
+                                        try (BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+                                            String inputLine;
+                                            while ((inputLine = in.readLine()) != null) {
+                                                response.append(inputLine);
+                                            }
+                                        }
+                                        String latestVersion = response.toString().trim();
+                                        String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform.toUpperCase() + "/download";
                                         updatePlugin(downloadUrl, entry.getKey());
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from hangar, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
