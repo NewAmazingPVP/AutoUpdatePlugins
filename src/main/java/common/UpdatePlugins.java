@@ -81,8 +81,9 @@ public class UpdatePlugins {
                                 boolean jenkinsPhrase = value.contains("https://ci.");
                                 boolean bukkitPhrase = value.contains("https://dev.bukkit.org/");
                                 boolean modrinthPhrase = value.contains("modrinth.com");
+                                boolean hangarPhrase = value.contains("https://hangar.papermc.io/");
 
-                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase)) {
+                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase || hangarPhrase)) {
                                     value = entry.getValue() + "/";
                                 }
                                 if (containsPhrase) {
@@ -95,23 +96,44 @@ public class UpdatePlugins {
                                     }
                                 } else if (githubPhrase) {
                                     try {
-                                        String repoPath = getRepoLocation(value);
+                                        String repoPath;
+                                        int artifactNum = 1;
+                                        String multiIdentifier = "multi";
+
+                                        if (value.contains(multiIdentifier)) {
+                                            int startIndex = value.indexOf(multiIdentifier) + multiIdentifier.length();
+                                            int endIndex = value.indexOf("]", startIndex);
+                                            artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
+                                            repoPath = getRepoLocation(value.substring(0, value.indexOf(multiIdentifier)));
+                                        } else {
+                                            repoPath = getRepoLocation(value);
+                                        }
+
                                         String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         JsonNode node = objectMapper.readTree(new URL(apiUrl));
 
                                         String downloadUrl = null;
+                                        int times = 0;
+
                                         for (JsonNode asset : node.get("assets")) {
                                             if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
-                                                downloadUrl = asset.get("browser_download_url").asText();
-                                                break;
+                                                times++;
+                                                if (times == artifactNum) {
+                                                    downloadUrl = asset.get("browser_download_url").asText();
+                                                    break;
+                                                }
                                             }
                                         }
-                                        updatePlugin(downloadUrl, entry.getKey());
-                                    } catch (IOException e) {
-                                        System.out.println("Failed to download plugin from github, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
-                                    }
 
+                                        if (downloadUrl != null) {
+                                            updatePlugin(downloadUrl, entry.getKey());
+                                        } else {
+                                            System.out.println("Failed to find the specified artifact number in the release assets.");
+                                        }
+                                    } catch (IOException | NumberFormatException e) {
+                                        System.out.println("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
+                                    }
                                 } else if (jenkinsPhrase) {
                                     try {
                                         ObjectMapper objectMapper = new ObjectMapper();
@@ -160,6 +182,18 @@ public class UpdatePlugins {
                                         }
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+                                    }
+                                } else if (hangarPhrase){
+                                    try {
+                                        String[] parts = value.split("/");
+                                        String projectName = parts[parts.length - 1];
+                                        String apiUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/latestrelease";
+                                        ObjectMapper objectMapper = new ObjectMapper();
+                                        String latestVersion = objectMapper.readTree(new URL(apiUrl)).asText();
+                                        String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform + "/download";
+                                        updatePlugin(downloadUrl, entry.getKey());
+                                    } catch (IOException e) {
+                                        System.out.println("Failed to download plugin from hangar, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
                                 } else {
                                     updatePlugin(value, entry.getKey());
