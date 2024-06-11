@@ -136,13 +136,26 @@ public class UpdatePlugins {
                                     }
                                 } else if (jenkinsPhrase) {
                                     try {
+                                        String jenkinsLink;
+                                        int artifactNum = 1;
+                                        String multiIdentifier = "[";
+
+                                        if (value.contains(multiIdentifier)) {
+                                            int startIndex = value.indexOf(multiIdentifier);
+                                            int endIndex = value.indexOf("]", startIndex);
+                                            artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
+                                            jenkinsLink = value.substring(0, value.indexOf(multiIdentifier));
+                                        } else {
+                                            jenkinsLink = value;
+                                        }
                                         ObjectMapper objectMapper = new ObjectMapper();
-                                        JsonNode node = objectMapper.readTree(new URL(value + "lastSuccessfulBuild/api/json"));
+                                        JsonNode node = objectMapper.readTree(new URL(jenkinsLink + "lastSuccessfulBuild/api/json"));
                                         ArrayNode artifacts = (ArrayNode) node.get("artifacts");
                                         JsonNode selectedArtifact = null;
+                                        int times = 0;
                                         for (JsonNode artifact : artifacts) {
-                                            String fileName = artifact.get("fileName").asText();
-                                            if (!fileName.toLowerCase().contains("sources") && !fileName.toLowerCase().contains("javadoc") && !fileName.toLowerCase().contains("legacy")) {
+                                            times++;
+                                            if (times == artifactNum) {
                                                 selectedArtifact = artifact;
                                                 break;
                                             }
@@ -153,7 +166,7 @@ public class UpdatePlugins {
                                         }
 
                                         String artifactName = selectedArtifact.get("relativePath").asText();
-                                        String artifactUrl = value + "lastSuccessfulBuild/artifact/" + artifactName;
+                                        String artifactUrl = jenkinsLink + "lastSuccessfulBuild/artifact/" + artifactName;
 
                                         updatePlugin(artifactUrl, entry.getKey());
                                     } catch (IOException e) {
