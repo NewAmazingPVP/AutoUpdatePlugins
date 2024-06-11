@@ -7,7 +7,7 @@ AutoUpdatePlugins is a versatile plugin for Spigot, Bungeecord, and Velocity tha
 ## Features
 
 - **Compatibility**: Supports Minecraft versions 1.8 and higher for Spigot, Velocity, and Bungeecord, including the latest versions.
-- **Automatic Downloads**: Fetches the latest releases from Spigotmc.org, GitHub, Jenkins, dev.bukkit.org, modrinth.com, and hangar.papermc.io based on user-provided links.
+- **Automatic Downloads**: Fetches the latest releases from Spigotmc.org, GitHub, Jenkins, dev.bukkit.org, modrinth.com, and hangar.papermc.io based on user-provided links. Also includes multi-artifact/jar support by specifying [num] at end of link for GitHub and jenkins.
 - **Configurable Update Interval**: Customize the update interval in the `config.yml` file.
 - **Plugin List Management**: Define which plugins to update and their download links in the `list.yml` file, including specifying the plugin jar file names.
 - **Manual Update Command**: Use the `/update` command to manually trigger updates (requires `autoupdateplugins.update` permission).
