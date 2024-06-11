@@ -5,6 +5,7 @@ DiscordSRV: https://get.discordsrv.com/
 Dynmap: https://dev.bukkit.org/projects/dynmap
 EasyPrefix: https://www.spigotmc.org/resources/easyprefix-gui-custom-prefixes-sql-support.44580/
 EssentialsX: https://github.com/EssentialsX/Essentials
+EssentialsXChat: https://github.com/EssentialsX/Essentialsmulti[3]
 FAWE: https://ci.athion.net/job/FastAsyncWorldEdit/
 Floodgate: https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
 Geyser-spigot: https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
@@ -17,6 +18,8 @@ ProtocolLib: https://ci.dmulloy2.net/job/ProtocolLib/
 SkinsRestorer: https://ci.codemc.io/job/SkinsRestorer/job/SkinsRestorerX-DEV/
 TAB: https://github.com/NEZNAMY/TAB
 ViewDistanceTweaks: https://www.spigotmc.org/resources/view-distance-tweaks.75164/
+Voicemod: https://modrinth.com/plugin/simple-voice-chat/
 ViaVersion-Dev: https://ci.viaversion.com/job/ViaVersion-DEV/
-Worldedit: https://dev.bukkit.org/projects/worldedit/
-Worldguard: https://dev.bukkit.org/projects/worldguard/
+ViaBackwards: https://hangar.papermc.io/ViaVersion/ViaBackwards
+Worldedit: https://dev.bukkit.org/projects/worldedit
+Worldguard: https://dev.bukkit.org/projects/worldguard
