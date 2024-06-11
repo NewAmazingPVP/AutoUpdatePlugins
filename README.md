@@ -46,15 +46,16 @@ Specify plugins to update in this format:
 ```yaml
 ViaVersion: "https://www.spigotmc.org/resources/viaversion.19254/"
 Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
-EssentialsXChat: "https://github.com/EssentialsX/Essentials + multi[3]"
-# For multi-artifact plugins, specify the artifact number within brackets.
+EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]" # For multi-artifact plugins, specify the artifact number within brackets.
+#
 # The plugin takes in a Spigot/Jenkins/Bukkit/Github/Modrinth/Hangar resource link or a direct link that automatically redirects and downloads the latest release.
 # Make sure if it's a Spigot resource link that the resource can be directly downloaded on Spigot itself and not on an external website
 # For Bukkit, Jenkins, Github, Modrinth, Hangar links, make sure they just point to the project (not the releases just the main project website)
 # For example:
 #   - The first example downloads the plugin from https://www.spigotmc.org/resources/viaversion.19254/ and names it ViaVersion (the .jar extension will be added automatically when downloaded)
 #   - The second example downloads the Geyser Spigot version and saves it as Geyser
-#   - The third example downloads the EssentialsXChat artifact from the EssentialsX project on GitHub. It specifies the artifact number (jar in release bundle) as 3 using the format `multi[3]` at end.
+#   - The third example downloads the EssentialsXChat artifact from the EssentialsX project on GitHub. It specifies the artifact number (jar in release bundle) as 3 using the format '[3]' at end.
+
 ```
 
 ### config.yml
@@ -78,7 +79,7 @@ DiscordSRV: https://get.discordsrv.com/
 Dynmap: https://dev.bukkit.org/projects/dynmap
 EasyPrefix: https://www.spigotmc.org/resources/easyprefix-gui-custom-prefixes-sql-support.44580/
 EssentialsX: https://github.com/EssentialsX/Essentials
-EssentialsXChat: https://github.com/EssentialsX/Essentialsmulti[3]
+EssentialsXChat: https://github.com/EssentialsX/Essentials[3]
 FAWE: https://ci.athion.net/job/FastAsyncWorldEdit/
 Floodgate: https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
 Geyser-spigot: https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
