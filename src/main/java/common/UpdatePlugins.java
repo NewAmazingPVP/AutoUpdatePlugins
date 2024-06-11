@@ -98,10 +98,10 @@ public class UpdatePlugins {
                                     try {
                                         String repoPath;
                                         int artifactNum = 1;
-                                        String multiIdentifier = "multi";
+                                        String multiIdentifier = "[";
 
                                         if (value.contains(multiIdentifier)) {
-                                            int startIndex = value.indexOf(multiIdentifier) + multiIdentifier.length();
+                                            int startIndex = value.indexOf(multiIdentifier);
                                             int endIndex = value.indexOf("]", startIndex);
                                             artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
                                             repoPath = getRepoLocation(value.substring(0, value.indexOf(multiIdentifier)));
