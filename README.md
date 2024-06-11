@@ -72,6 +72,7 @@ updates:
 
 Here is a template for `list.yml`:
 ```yaml
+AuthMeReloaded: https://ci.codemc.io/job/AuthMe/job/AuthMeReloaded/[4]
 BlueSlimeCore: https://www.spigotmc.org/resources/blueslimecore.83189/
 Chunky: https://www.spigotmc.org/resources/chunky.81534/
 ChunkyBorder: https://www.spigotmc.org/resources/chunkyborder.84278/
