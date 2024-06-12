@@ -84,7 +84,9 @@ public class UpdatePlugins {
                                 boolean hangarPhrase = value.contains("https://hangar.papermc.io/");
 
                                 if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase || hangarPhrase)) {
-                                    value = entry.getValue() + "/";
+                                    if(!value.endsWith("]")) {
+                                        value = entry.getValue() + "/";
+                                    }
                                 }
                                 if (containsPhrase) {
                                     try {
@@ -147,6 +149,9 @@ public class UpdatePlugins {
                                             jenkinsLink = value.substring(0, value.indexOf(multiIdentifier));
                                         } else {
                                             jenkinsLink = value;
+                                        }
+                                        if(!jenkinsLink.endsWith("/")){
+                                            jenkinsLink += "/";
                                         }
                                         ObjectMapper objectMapper = new ObjectMapper();
                                         JsonNode node = objectMapper.readTree(new URL(jenkinsLink + "lastSuccessfulBuild/api/json"));
