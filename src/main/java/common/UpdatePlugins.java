@@ -98,40 +98,78 @@ public class UpdatePlugins {
                                     }
                                 } else if (githubPhrase) {
                                     try {
-                                        String repoPath;
-                                        int artifactNum = 1;
-                                        String multiIdentifier = "[";
+                                        if (value.endsWith("/dev")) {
+                                            String repoPath;
+                                            int artifactNum = 1;
+                                            String multiIdentifier = "[";
 
-                                        if (value.contains(multiIdentifier)) {
-                                            int startIndex = value.indexOf(multiIdentifier);
-                                            int endIndex = value.indexOf("]", startIndex);
-                                            artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
-                                            repoPath = getRepoLocation(value.substring(0, value.indexOf(multiIdentifier)));
-                                        } else {
-                                            repoPath = getRepoLocation(value);
-                                        }
+                                            if (value.contains(multiIdentifier)) {
+                                                int startIndex = value.indexOf(multiIdentifier);
+                                                int endIndex = value.indexOf("]", startIndex);
+                                                artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
+                                                repoPath = getRepoLocation(value.substring(0, value.indexOf(multiIdentifier)));
+                                            } else {
+                                                repoPath = getRepoLocation(value.substring(0, value.length() - 4));
+                                            }
 
-                                        String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
-                                        ObjectMapper objectMapper = new ObjectMapper();
-                                        JsonNode node = objectMapper.readTree(new URL(apiUrl));
+                                            String apiUrl = "https://api.github.com/repos" + repoPath + "/actions/artifacts";
+                                            ObjectMapper objectMapper = new ObjectMapper();
+                                            JsonNode node = objectMapper.readTree(new URL(apiUrl));
 
-                                        String downloadUrl = null;
-                                        int times = 0;
+                                            String downloadUrl = null;
+                                            int times = 0;
 
-                                        for (JsonNode asset : node.get("assets")) {
-                                            if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
-                                                times++;
-                                                if (times == artifactNum) {
-                                                    downloadUrl = asset.get("browser_download_url").asText();
-                                                    break;
+                                            for (JsonNode artifact : node.get("artifacts")) {
+                                                if (artifact.has("name")) {
+                                                    times++;
+                                                    if (times == artifactNum) {
+                                                        downloadUrl = artifact.get("archive_download_url").asText();
+                                                        break;
+                                                    }
                                                 }
                                             }
-                                        }
 
-                                        if (downloadUrl != null) {
-                                            updatePlugin(downloadUrl, entry.getKey());
+                                            if (downloadUrl != null) {
+                                                updatePlugin(downloadUrl, entry.getKey());
+                                            } else {
+                                                System.out.println("Failed to find the specified artifact number in the workflow artifacts.");
+                                            }
                                         } else {
-                                            System.out.println("Failed to find the specified artifact number in the release assets.");
+                                            String repoPath;
+                                            int artifactNum = 1;
+                                            String multiIdentifier = "[";
+
+                                            if (value.contains(multiIdentifier)) {
+                                                int startIndex = value.indexOf(multiIdentifier);
+                                                int endIndex = value.indexOf("]", startIndex);
+                                                artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
+                                                repoPath = getRepoLocation(value.substring(0, value.indexOf(multiIdentifier)));
+                                            } else {
+                                                repoPath = getRepoLocation(value);
+                                            }
+
+                                            String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
+                                            ObjectMapper objectMapper = new ObjectMapper();
+                                            JsonNode node = objectMapper.readTree(new URL(apiUrl));
+
+                                            String downloadUrl = null;
+                                            int times = 0;
+
+                                            for (JsonNode asset : node.get("assets")) {
+                                                if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
+                                                    times++;
+                                                    if (times == artifactNum) {
+                                                        downloadUrl = asset.get("browser_download_url").asText();
+                                                        break;
+                                                    }
+                                                }
+                                            }
+
+                                            if (downloadUrl != null) {
+                                                updatePlugin(downloadUrl, entry.getKey());
+                                            } else {
+                                                System.out.println("Failed to find the specified artifact number in the release assets.");
+                                            }
                                         }
                                     } catch (IOException | NumberFormatException e) {
                                         System.out.println("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
