@@ -98,7 +98,7 @@ public class UpdatePlugins {
                                     }
                                 } else if (githubPhrase) {
                                     try {
-                                        if (value.endsWith("/dev")) {
+                                        if (value.endsWith("/dev/")) {
                                             String repoPath;
                                             int artifactNum = 1;
                                             String multiIdentifier = "[";
