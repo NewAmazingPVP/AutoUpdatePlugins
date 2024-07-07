@@ -9,10 +9,14 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Enumeration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 
 public class UpdatePlugins {
 
@@ -39,29 +43,72 @@ public class UpdatePlugins {
         }
     }
 
-    public void updatePlugin(String link, String fileName) {
+    public void updatePlugin(String link, String fileName, String key) {
+        String downloadPath = "plugins/" + fileName + ".download";
         String outputFilePath = "plugins/" + fileName + ".jar";
+        String githubToken = key;
 
         try {
+            // Download the file
             URL url = new URL(link);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+            if (githubToken != null && !githubToken.isEmpty()) {
+                connection.setRequestProperty("Authorization", "Bearer " + githubToken);
+            }
 
             try (InputStream in = connection.getInputStream();
-                 FileOutputStream out = new FileOutputStream(outputFilePath)) {
+                 FileOutputStream out = new FileOutputStream(downloadPath)) {
                 byte[] buffer = new byte[1024];
                 int bytesRead;
                 while ((bytesRead = in.read(buffer)) != -1) {
                     out.write(buffer, 0, bytesRead);
                 }
             }
+
+            if (isZipFile(downloadPath)) {
+                extractFirstJarFromZip(downloadPath, outputFilePath);
+                new File(downloadPath).delete();
+            } else {
+                new File(downloadPath).renameTo(new File(outputFilePath));
+            }
+
         } catch (IOException e) {
-            System.out.println("Failed to download plugin: " + e.getMessage());
+            System.out.println("Failed to download or extract plugin: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    public void readList(File myFile, String platform) throws IOException {
+    private boolean isZipFile(String filePath) throws IOException {
+        try (ZipInputStream zipInputStream = new ZipInputStream(new FileInputStream(filePath))) {
+            return zipInputStream.getNextEntry() != null;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private void extractFirstJarFromZip(String zipFilePath, String outputFilePath) throws IOException {
+        try (ZipFile zipFile = new ZipFile(zipFilePath)) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                if (!entry.isDirectory() && entry.getName().endsWith(".jar")) {
+                    try (InputStream in = zipFile.getInputStream(entry);
+                         FileOutputStream out = new FileOutputStream(outputFilePath)) {
+                        byte[] buffer = new byte[1024];
+                        int bytesRead;
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, bytesRead);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    public void readList(File myFile, String platform, String key) throws IOException {
         CompletableFuture.runAsync(() -> {
             if (myFile.length() == 0) {
                 System.out.println("File is empty. Please put FileSaveName: [link to plugin]");
@@ -92,7 +139,7 @@ public class UpdatePlugins {
                                     try {
                                         String pluginId = extractPluginIdFromLink(value);
                                         String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-                                        updatePlugin(downloadUrl, entry.getKey());
+                                        updatePlugin(downloadUrl, entry.getKey(), key);
                                     } catch (Exception e) {
                                         System.out.println("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
@@ -130,7 +177,7 @@ public class UpdatePlugins {
                                             }
 
                                             if (downloadUrl != null) {
-                                                updatePlugin(downloadUrl, entry.getKey());
+                                                updatePlugin(downloadUrl, entry.getKey(), key);
                                             } else {
                                                 System.out.println("Failed to find the specified artifact number in the workflow artifacts.");
                                             }
@@ -166,7 +213,7 @@ public class UpdatePlugins {
                                             }
 
                                             if (downloadUrl != null) {
-                                                updatePlugin(downloadUrl, entry.getKey());
+                                                updatePlugin(downloadUrl, entry.getKey(), key);
                                             } else {
                                                 System.out.println("Failed to find the specified artifact number in the release assets.");
                                             }
@@ -211,12 +258,12 @@ public class UpdatePlugins {
                                         String artifactName = selectedArtifact.get("relativePath").asText();
                                         String artifactUrl = jenkinsLink + "lastSuccessfulBuild/artifact/" + artifactName;
 
-                                        updatePlugin(artifactUrl, entry.getKey());
+                                        updatePlugin(artifactUrl, entry.getKey(), key);
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
                                 } else if (bukkitPhrase) {
-                                    updatePlugin(value + "files/latest", entry.getKey());
+                                    updatePlugin(value + "files/latest", entry.getKey(), key);
                                 } else if (modrinthPhrase) {
                                     try {
                                         String[] parts = value.split("/");
@@ -232,7 +279,7 @@ public class UpdatePlugins {
                                         for (JsonNode version : node) {
                                             if (version.get("loaders").toString().toLowerCase().contains(platform)) {
                                                 String downloadUrl = version.get("files").get(0).get("url").asText();
-                                                updatePlugin(downloadUrl, entry.getKey());
+                                                updatePlugin(downloadUrl, entry.getKey(), key);
                                                 break;
                                             }
                                         }
@@ -257,12 +304,12 @@ public class UpdatePlugins {
                                         }
                                         String latestVersion = response.toString().trim();
                                         String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform.toUpperCase() + "/download";
-                                        updatePlugin(downloadUrl, entry.getKey());
+                                        updatePlugin(downloadUrl, entry.getKey(), key);
                                     } catch (IOException e) {
                                         System.out.println("Failed to download plugin from hangar, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
                                     }
                                 } else {
-                                    updatePlugin(value, entry.getKey());
+                                    updatePlugin(value, entry.getKey(), key);
                                 }
                             } catch (NullPointerException ignored) {
                             }
