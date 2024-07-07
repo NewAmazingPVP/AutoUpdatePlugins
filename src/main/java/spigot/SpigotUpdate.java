@@ -44,7 +44,7 @@ public final class SpigotUpdate extends JavaPlugin {
             @Override
             public void run(){
                 try {
-                    m_updatePlugins.readList(myFile, "paper");
+                    m_updatePlugins.readList(myFile, "paper", config.getString("updates.key"));
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -57,7 +57,7 @@ public final class SpigotUpdate extends JavaPlugin {
         @Override
         public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
             try {
-                m_updatePlugins.readList(myFile, "paper");
+                m_updatePlugins.readList(myFile, "paper", config.getString("updates.key"));
                 sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
                 return true;
             } catch (IOException e) {

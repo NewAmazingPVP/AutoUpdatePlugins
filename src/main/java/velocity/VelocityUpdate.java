@@ -65,7 +65,7 @@ public final class VelocityUpdate {
 
         proxy.getScheduler().buildTask(this, () -> {
             try {
-                m_updatePlugins.readList(myFile, "velocity");
+                m_updatePlugins.readList(myFile, "velocity", config.getString("updates.key"));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -103,7 +103,7 @@ public final class VelocityUpdate {
         public void execute(Invocation invocation) {
             CommandSource source = invocation.source();
             try {
-                m_updatePlugins.readList(myFile, "velocity");
+                m_updatePlugins.readList(myFile, "velocity", config.getString("updates.key"));
                 source.sendMessage(Component.text("Plugins are successfully updating!").color(NamedTextColor.AQUA));
             } catch (IOException e) {
                 source.sendMessage(Component.text("Plugins failed to update!").color(NamedTextColor.RED));
