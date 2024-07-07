@@ -7,7 +7,7 @@ updates:
   # Change this if plugins are causing errors by installing before they load
   bootTime: 50
 
-  key: ""
+  key:
 
 # Plugins List Configuration
 # Go to the list.yml file created in this same directory and put the plugin information that you want to periodically update in this format:
