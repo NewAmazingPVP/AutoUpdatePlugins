@@ -7,6 +7,9 @@ interval = 120
 # Change this if plugins are causing errors by installing before they load
 bootTime = 50
 
+# Note: This is optional. If you are downloading from GitHub Actions/Workflow/Dev (not releases), you will need to generate a GitHub personal access token and enter it here.
+# How to Generate a GitHub Personal Access Token: https://www.geeksforgeeks.org/how-to-generate-personal-access-token-in-github/
+# Make sure to include the `public_repo` permission to make it work.
 key = ""
 
 # Plugins List Configuration

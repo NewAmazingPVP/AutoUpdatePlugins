@@ -49,7 +49,6 @@ public class UpdatePlugins {
         String githubToken = key;
 
         try {
-            // Download the file
             URL url = new URL(link);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
@@ -145,6 +144,7 @@ public class UpdatePlugins {
                                     }
                                 } else if (githubPhrase) {
                                     try {
+                                        value = value.replace("/actions/", "/dev/");
                                         if (value.endsWith("/dev/")) {
                                             String repoPath;
                                             int artifactNum = 1;
