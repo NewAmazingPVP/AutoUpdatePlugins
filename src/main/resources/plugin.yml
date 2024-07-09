@@ -1,5 +1,5 @@
 name: AutoUpdatePlugins
-version: '8.0'
+version: '8.5'
 main: spigot.SpigotUpdate
 authors:
   - NewAmazingPVP
