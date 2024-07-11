@@ -44,7 +44,7 @@ public class UpdatePlugins {
     }
 
     public void updatePlugin(String link, String fileName, String key) {
-        String downloadPath = "plugins/" + fileName + ".download";
+        String downloadPath = "plugins/" + fileName + ".zip";
         String outputFilePath = "plugins/" + fileName + ".jar";
         String githubToken = key;
 
@@ -52,7 +52,7 @@ public class UpdatePlugins {
             URL url = new URL(link);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-            if (githubToken != null && !githubToken.isEmpty()) {
+            if (githubToken != null && !githubToken.isEmpty() && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
                 connection.setRequestProperty("Authorization", "Bearer " + githubToken);
             }
 
@@ -101,6 +101,7 @@ public class UpdatePlugins {
                             out.write(buffer, 0, bytesRead);
                         }
                     }
+                    //maybe try multiple?
                     break;
                 }
             }
