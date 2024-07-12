@@ -65,7 +65,7 @@ public class UpdatePlugins {
                 }
             }
 
-            if (isZipFile(downloadPath)) {
+            if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
                 extractFirstJarFromZip(downloadPath, outputFilePath);
                 new File(downloadPath).delete();
             } else {
