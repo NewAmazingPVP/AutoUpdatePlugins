@@ -65,6 +65,7 @@ public class UpdatePlugins {
                 }
             }
 
+            //in theory only some plugins like geyser and floodgate extract after download so maybe instead of only github actions you can allow more things to unzip but risky
             if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
                 extractFirstJarFromZip(downloadPath, outputFilePath);
                 new File(downloadPath).delete();
