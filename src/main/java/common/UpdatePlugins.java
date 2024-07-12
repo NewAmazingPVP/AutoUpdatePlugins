@@ -69,6 +69,14 @@ public class UpdatePlugins {
                     connection.setRequestProperty("Authorization", "Bearer " + githubToken);
                 }
 
+                try (InputStream in = connection.getInputStream();
+                     FileOutputStream out = new FileOutputStream(downloadPath)) {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, bytesRead);
+                    }
+                }
                 if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
                     extractFirstJarFromZip(downloadPath, outputFilePath);
                     new File(downloadPath).delete();
