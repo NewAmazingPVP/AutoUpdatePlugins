@@ -43,39 +43,43 @@ public class UpdatePlugins {
         }
     }
 
-    public void updatePlugin(String link, String fileName, String key) {
+    public void updatePlugin(String link, String fileName, String key) throws IOException {
+        boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github");
         String downloadPath = "plugins/" + fileName + ".zip";
         String outputFilePath = "plugins/" + fileName + ".jar";
-        String githubToken = key;
-
-        try {
+        if (!isGithubActions) {
             URL url = new URL(link);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-            if (githubToken != null && !githubToken.isEmpty() && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
-                connection.setRequestProperty("Authorization", "Bearer " + githubToken);
-            }
-
             try (InputStream in = connection.getInputStream();
-                 FileOutputStream out = new FileOutputStream(downloadPath)) {
+                 FileOutputStream out = new FileOutputStream(outputFilePath)) {
                 byte[] buffer = new byte[1024];
                 int bytesRead;
                 while ((bytesRead = in.read(buffer)) != -1) {
                     out.write(buffer, 0, bytesRead);
                 }
             }
+        } else {
+            String githubToken = key;
+            try {
+                URL url = new URL(link);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+                if (githubToken != null && !githubToken.isEmpty()) {
+                    connection.setRequestProperty("Authorization", "Bearer " + githubToken);
+                }
 
-            //in theory only some plugins like geyser and floodgate extract after download so maybe instead of only github actions you can allow more things to unzip but risky
-            if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
-                extractFirstJarFromZip(downloadPath, outputFilePath);
-                new File(downloadPath).delete();
-            } else {
-                new File(downloadPath).renameTo(new File(outputFilePath));
+                if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
+                    extractFirstJarFromZip(downloadPath, outputFilePath);
+                    new File(downloadPath).delete();
+                } else {
+                    new File(downloadPath).renameTo(new File(outputFilePath));
+                }
+
+            } catch (IOException e) {
+                System.out.println("Failed to download or extract plugin: " + e.getMessage());
+                e.printStackTrace();
             }
-
-        } catch (IOException e) {
-            System.out.println("Failed to download or extract plugin: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
