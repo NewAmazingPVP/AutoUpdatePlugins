@@ -44,7 +44,7 @@ public class UpdatePlugins {
     }
 
     public void updatePlugin(String link, String fileName, String key) throws IOException {
-        boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github");
+        boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && !key.isEmpty();
         String downloadPath = "plugins/" + fileName + ".zip";
         String outputFilePath = "plugins/" + fileName + ".jar";
         if (!isGithubActions) {
