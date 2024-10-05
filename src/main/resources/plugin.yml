@@ -10,3 +10,4 @@ commands:
     usage: /update
     permission: autoupdateplugins.update
     default: op
+folia-supported: true

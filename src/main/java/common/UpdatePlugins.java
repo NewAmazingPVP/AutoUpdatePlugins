@@ -9,9 +9,15 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -43,10 +49,62 @@ public class UpdatePlugins {
         }
     }
 
+    public void extractPluginYml(String jarFilePath, String outputDir) throws IOException {
+        try (JarFile jarFile = new JarFile(jarFilePath)) {
+            JarEntry entry = jarFile.getJarEntry("plugin.yml");
+            if (entry != null) {
+                try (InputStream inputStream = jarFile.getInputStream(entry);
+                     FileOutputStream outputStream = new FileOutputStream(outputDir + "/plugin.yml")) {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                }
+            }
+        }
+    }
+
+    public void modifyPluginYml(String pluginYmlPath) throws IOException {
+        String newLine = "\nfolia-supported: true\n";
+        String content = new String(Files.readAllBytes(Paths.get(pluginYmlPath)));
+
+        if (!content.contains(newLine.trim())) {
+            Files.write(Paths.get(pluginYmlPath), newLine.getBytes(), StandardOpenOption.APPEND);
+        }
+    }
+
+
+    public void repackageJar(String originalJarPath, String modifiedJarPath, String pluginYmlPath) throws IOException {
+        try (JarFile jarFile = new JarFile(originalJarPath);
+             JarOutputStream jos = new JarOutputStream(new FileOutputStream(modifiedJarPath))) {
+            Enumeration<JarEntry> entries = jarFile.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                InputStream inputStream;
+                if (entry.getName().equals("plugin.yml")) {
+                    inputStream = new FileInputStream(pluginYmlPath);
+                } else {
+                    inputStream = jarFile.getInputStream(entry);
+                }
+                jos.putNextEntry(new JarEntry(entry.getName()));
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    jos.write(buffer, 0, bytesRead);
+                }
+                inputStream.close();
+                jos.closeEntry();
+            }
+        }
+    }
+
     public void updatePlugin(String link, String fileName, String key) throws IOException {
         boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && !key.isEmpty();
         String downloadPath = "plugins/" + fileName + ".zip";
-        String outputFilePath = "plugins/" + fileName + ".jar";
+        String outputFilePath = "plugins/init" + fileName + ".jar";
+        String tempDir = "plugins/AutoUpdatePlugins";
+
         if (!isGithubActions) {
             URL url = new URL(link);
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -89,7 +147,15 @@ public class UpdatePlugins {
                 e.printStackTrace();
             }
         }
+
+        extractPluginYml(outputFilePath, tempDir);
+        modifyPluginYml(tempDir + "/plugin.yml");
+        repackageJar(outputFilePath, "plugins/" + fileName + ".jar", tempDir + "/plugin.yml");
+
+        new File(outputFilePath).delete();
+        new File(tempDir + "/plugin.yml").delete();
     }
+
 
     private boolean isZipFile(String filePath) throws IOException {
         try (ZipInputStream zipInputStream = new ZipInputStream(new FileInputStream(filePath))) {
