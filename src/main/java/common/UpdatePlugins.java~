@@ -121,66 +121,6 @@ public class UpdatePlugins {
         }
     }
 
-    private void handleBlobBuild(String value, String key, Map.Entry<String, String> entry) {
-        try {
-            String[] urlParts = value.split("/");
-            String projectName = urlParts[urlParts.length - 2];
-            String releaseChannel = urlParts[urlParts.length - 1];
-
-            String apiUrl = String.format("https://blob.build/api/builds/%s/%s/latest", projectName, releaseChannel);
-
-            URL url = new URL(apiUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-
-            ObjectMapper objectMapper = new ObjectMapper();
-            JsonNode response = objectMapper.readTree(connection.getInputStream());
-
-            if (response.get("success").asBoolean()) {
-                JsonNode data = response.get("data");
-                String downloadUrl = data.get("fileDownloadUrl").asText();
-                updatePlugin(downloadUrl, entry.getKey(), key);
-            } else {
-                System.out.println("Failed to fetch from blob.build: " + response.get("error").asText());
-            }
-        } catch (Exception e) {
-            System.out.println("Failed to download plugin from blob.build: " + e.getMessage());
-        }
-    }
-
-    private void handleBusyBiscuit(String value, String key, Map.Entry<String, String> entry) {
-        try {
-            Pattern pattern = Pattern.compile("builds/([^/]+)/([^/]+)");
-            Matcher matcher = pattern.matcher(value);
-
-            if (matcher.find()) {
-                String owner = matcher.group(1);
-                String repo = matcher.group(2);
-
-                String apiUrl = String.format("https://thebusybiscuit.github.io/builds/%s/%s/master/builds.json",
-                        owner, repo);
-
-                URL url = new URL(apiUrl);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-
-                ObjectMapper objectMapper = new ObjectMapper();
-                JsonNode buildsData = objectMapper.readTree(connection.getInputStream());
-
-                String lastBuild = buildsData.get("last_successful").asText();
-
-                String downloadUrl = String.format("https://thebusybiscuit.github.io/builds/%s/%s/master/download/%s/%s-%s.jar",
-                        owner, repo, lastBuild, repo, lastBuild);
-
-                updatePlugin(downloadUrl, entry.getKey(), key);
-            } else {
-                System.out.println("Invalid TheBusyBiscuit builds URL format");
-            }
-        } catch (Exception e) {
-            System.out.println("Failed to download plugin from TheBusyBiscuit builds: " + e.getMessage());
-        }
-    }
-
     public void readList(File myFile, String platform, String key) throws IOException {
         CompletableFuture.runAsync(() -> {
             if (myFile.length() == 0) {
@@ -196,10 +136,6 @@ public class UpdatePlugins {
                             try {
                                 System.out.println(entry.getKey() + " ---- " + entry.getValue());
                                 String value = entry.getValue();
-
-                                boolean blobBuildPhrase = value.contains("blob.build");
-                                boolean busyBiscuitPhrase = value.contains("thebusybiscuit.github.io/builds");
-
                                 boolean containsPhrase = value.contains("spigotmc.org");
                                 boolean githubPhrase = value.contains("github.com");
                                 boolean jenkinsPhrase = value.contains("https://ci.");
@@ -207,18 +143,12 @@ public class UpdatePlugins {
                                 boolean modrinthPhrase = value.contains("modrinth.com");
                                 boolean hangarPhrase = value.contains("https://hangar.papermc.io/");
 
-                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase ||
-                                        bukkitPhrase || modrinthPhrase || hangarPhrase || blobBuildPhrase || busyBiscuitPhrase)) {
+                                if (!value.endsWith("/") && (containsPhrase || githubPhrase || jenkinsPhrase || bukkitPhrase || modrinthPhrase || hangarPhrase)) {
                                     if(!value.endsWith("]")) {
                                         value = entry.getValue() + "/";
                                     }
                                 }
-
-                                if (blobBuildPhrase) {
-                                    handleBlobBuild(value, key, entry);
-                                } else if (busyBiscuitPhrase) {
-                                    handleBusyBiscuit(value, key, entry);
-                                } else if (containsPhrase) {
+                                if (containsPhrase) {
                                     try {
                                         String pluginId = extractPluginIdFromLink(value);
                                         String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
