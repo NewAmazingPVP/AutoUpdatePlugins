@@ -37,7 +37,12 @@ public class PluginUpdater {
 					return;
 				}
 				for (Map.Entry<String, String> entry : links.entrySet()) {
-					handleUpdateEntry(platform, key, entry);
+					boolean downloadSuccessfull = handleUpdateEntry(platform, key, entry);
+					if (downloadSuccessfull) {
+						continue;
+					}
+					System.out.println("Download for " + entry.getKey() + " was not successfull");
+
 				}
 			} catch (IOException e) {
 				throw new RuntimeException(e);
@@ -45,7 +50,8 @@ public class PluginUpdater {
 		});
 	}
 
-	private void handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
+	private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
+
 		try {
 			System.out.println(entry.getKey() + " ---- " + entry.getValue());
 			String value = entry.getValue();
@@ -68,29 +74,30 @@ public class PluginUpdater {
 			}
 
 			if (blobBuildPhrase) {
-				handleBlobBuild(value, key, entry);
+				return handleBlobBuild(value, key, entry);
 			} else if (busyBiscuitPhrase) {
-				handleBusyBiscuitdownload(value, key, entry);
+				return handleBusyBiscuitDownload(value, key, entry);
 			} else if (hasSpigotPhrase) {
-				handleSpigotDownload(key, entry, value);
+				return handleSpigotDownload(key, entry, value);
 			} else if (hasGithubPhrase) {
-				handleGitHubDownload(key, entry, value);
+				return handleGitHubDownload(key, entry, value);
 			} else if (hasJenkinsPhrase) {
-				handleJenkinsDownload(key, entry, value);
+				return handleJenkinsDownload(key, entry, value);
 			} else if (hasBukkitPhrase) {
-				pluginDownloader.downloadPlugin(value + "files/latest", entry.getKey(), key);
+				return pluginDownloader.downloadPlugin(value + "files/latest", entry.getKey(), key);
 			} else if (hasModrinthPhrase) {
-				handleModrinthDownload(platform, key, entry, value);
+				return handleModrinthDownload(platform, key, entry, value);
 			} else if (hasHangarPhrase) {
-				handleHangarDownload(platform, key, entry, value);
+				return handleHangarDownload(platform, key, entry, value);
 			} else {
-				pluginDownloader.downloadPlugin(value, entry.getKey(), key);
+				return pluginDownloader.downloadPlugin(value, entry.getKey(), key);
 			}
 		} catch (NullPointerException ignored) {
+			return false;
 		}
 	}
 
-	private void handleBlobBuild(String value, String key, Map.Entry<String, String> entry) {
+	private boolean handleBlobBuild(String value, String key, Map.Entry<String, String> entry) {
 		try {
 			String[] urlParts = value.split("/");
 			String projectName = urlParts[urlParts.length - 2];
@@ -111,13 +118,14 @@ public class PluginUpdater {
 			}
 			JsonNode data = response.get("data");
 			String downloadUrl = data.get("fileDownloadUrl").asText();
-			pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+			return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 		} catch (Exception e) {
 			System.out.println("Failed to download plugin from blob.build: " + e.getMessage());
+			return false;
 		}
 	}
 
-	private void handleBusyBiscuitdownload(String value, String key, Map.Entry<String, String> entry) {
+	private boolean handleBusyBiscuitDownload(String value, String key, Map.Entry<String, String> entry) {
 		try {
 			Pattern pattern = Pattern.compile("builds/([^/]+)/([^/]+)");
 			Matcher matcher = pattern.matcher(value);
@@ -142,13 +150,14 @@ public class PluginUpdater {
 			String downloadUrl = String.format("https://thebusybiscuit.github.io/builds/%s/%s/master/download/%s/%s-%s.jar", owner, repo, lastBuild, repo,
 				lastBuild);
 
-			pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+			return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 		} catch (Exception e) {
 			System.out.println("Failed to download plugin from TheBusyBiscuit builds: " + e.getMessage());
+			return false;
 		}
 	}
 
-	private void handleHangarDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
+	private boolean handleHangarDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String[] parts = value.split("/");
 			String projectName = parts[parts.length - 1];
@@ -167,13 +176,14 @@ public class PluginUpdater {
 			String latestVersion = response.toString().trim();
 			String downloadUrl =
 				"https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform.toUpperCase() + "/download";
-			pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+			return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 		} catch (IOException e) {
 			System.out.println("Failed to download plugin from hangar, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+			return false;
 		}
 	}
 
-	private void handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
+	private boolean handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String[] parts = value.split("/");
 			String projectName = parts[parts.length - 1];
@@ -190,15 +200,16 @@ public class PluginUpdater {
 					continue;
 				}
 				String downloadUrl = version.get("files").get(0).get("url").asText();
-				pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+				return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 				break;
 			}
 		} catch (IOException e) {
 			System.out.println("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+			return false;
 		}
 	}
 
-	private void handleJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
+	private boolean handleJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String jenkinsLink;
 			int artifactNum = 1;
@@ -235,14 +246,15 @@ public class PluginUpdater {
 			String artifactName = selectedArtifact.get("relativePath").asText();
 			String artifactUrl = jenkinsLink + "lastSuccessfulBuild/artifact/" + artifactName;
 
-			pluginDownloader.downloadPlugin(artifactUrl, entry.getKey(), key);
+			return pluginDownloader.downloadPlugin(artifactUrl, entry.getKey(), key);
 		} catch (IOException e) {
 			System.out.println(
 				"Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right " + "format?" + e.getMessage());
+			return false;
 		}
 	}
 
-	private void handleGitHubDownload(String key, Map.Entry<String, String> entry, String value) {
+	private boolean handleGitHubDownload(String key, Map.Entry<String, String> entry, String value) {
 		try {
 			value = value.replace("/actions/", "/dev/");
 			if (value.endsWith("/dev/")) {
@@ -277,11 +289,10 @@ public class PluginUpdater {
 				}
 
 				if (downloadUrl != null) {
-					pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
-				} else {
-					System.out.println("Failed to find the specified artifact number in the workflow artifacts.");
+					return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 				}
-				return;
+				System.out.println("Failed to find the specified artifact number in the workflow artifacts.");
+				return false;
 			}
 			String repoPath;
 			int artifactNum = 1;
@@ -313,24 +324,27 @@ public class PluginUpdater {
 			}
 
 			if (downloadUrl != null) {
-				pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+				return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 			} else {
 				System.out.println("Failed to find the specified artifact number in the release assets.");
+				return false;
 			}
 
 		} catch (IOException | NumberFormatException e) {
 			System.out.println(
 				"Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
+			return false;
 		}
 	}
 
-	private void handleSpigotDownload(String key, Map.Entry<String, String> entry, String value) {
+	private boolean handleSpigotDownload(String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String pluginId = extractPluginIdFromLink(value);
 			String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-			pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+			return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
 		} catch (Exception e) {
 			System.out.println("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+			return false;
 		}
 	}
 
