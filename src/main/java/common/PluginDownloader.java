@@ -16,26 +16,24 @@ import java.util.zip.ZipInputStream;
 
 public class PluginDownloader {
 
-	public void downloadPlugin(String link, String fileName, String githubToken) throws IOException {
+	public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException {
 		boolean isGithubActions =
 			link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && githubToken != null && !githubToken.isEmpty();
 		String downloadPath = "plugins/" + fileName + ".zip";
 		String outputFilePath = "plugins/" + fileName + ".jar";
 		if (!isGithubActions) {
-			URL url = new URL(link);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+			HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
 			connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-			downloadPluginToFile(outputFilePath, connection);
-			return;
+			return downloadPluginToFile(outputFilePath, connection);
+
 		}
 		HttpURLConnection connection;
 		try {
-			URL url = new URL(link);
-			connection = (HttpURLConnection) url.openConnection();
+			connection = (HttpURLConnection) new URL(link).openConnection();
 		} catch (IOException e) {
 			System.out.println("Failed to download or extract plugin: " + e.getMessage());
 			e.printStackTrace();
-			return;
+			return false;
 		}
 
 		connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
@@ -52,16 +50,20 @@ public class PluginDownloader {
 		} catch (IOException e) {
 			System.out.println("Failed to download or extract plugin: " + e.getMessage());
 			e.printStackTrace();
+			return false;
 		}
 	}
 
-	private void downloadPluginToFile(String outputFilePath, HttpURLConnection connection) throws IOException {
+	private boolean downloadPluginToFile(String outputFilePath, HttpURLConnection connection) throws IOException {
 		try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outputFilePath)) {
 			byte[] buffer = new byte[1024];
 			int bytesRead;
 			while ((bytesRead = in.read(buffer)) != -1) {
 				out.write(buffer, 0, bytesRead);
 			}
+			return true;
+		} catch (IOException e) {
+			return false;
 		}
 	}
 
