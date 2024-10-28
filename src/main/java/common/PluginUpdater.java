@@ -38,10 +38,9 @@ public class PluginUpdater {
 				}
 				for (Map.Entry<String, String> entry : links.entrySet()) {
 					boolean downloadSuccessful = handleUpdateEntry(platform, key, entry);
-					if (downloadSuccessful) {
-						continue;
+					if (!downloadSuccessful) {
+						System.out.println("Download for " + entry.getKey() + " was not successful");
 					}
-					System.out.println("Download for " + entry.getKey() + " was not successful");
 
 				}
 			} catch (IOException e) {
