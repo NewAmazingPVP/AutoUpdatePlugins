@@ -37,11 +37,11 @@ public class PluginUpdater {
 					return;
 				}
 				for (Map.Entry<String, String> entry : links.entrySet()) {
-					boolean downloadSuccessfull = handleUpdateEntry(platform, key, entry);
-					if (downloadSuccessfull) {
+					boolean downloadSuccessful = handleUpdateEntry(platform, key, entry);
+					if (downloadSuccessful) {
 						continue;
 					}
-					System.out.println("Download for " + entry.getKey() + " was not successfull");
+					System.out.println("Download for " + entry.getKey() + " was not successful");
 
 				}
 			} catch (IOException e) {
