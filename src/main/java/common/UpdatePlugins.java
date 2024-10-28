@@ -10,17 +10,13 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -28,7 +24,7 @@ import java.util.zip.ZipInputStream;
 public class UpdatePlugins {
 
 	public String extractPluginIdFromLink(String spigotResourceLink) {
-		Pattern pattern = Pattern.compile("([0-9]+)/");
+		Pattern pattern = Pattern.compile("(\\d+)/");
 		Matcher matcher = pattern.matcher(spigotResourceLink);
 		if (!matcher.find()) {
 			return "";
@@ -48,46 +44,39 @@ public class UpdatePlugins {
 		return matcher.group(0);
 	}
 
-	public void updatePlugin(String link, String fileName, String key) throws IOException {
-		boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && !key.isEmpty();
+	public void updatePlugin(String link, String fileName, String githubToken) throws IOException {
+		boolean isGithubActions =
+			link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && githubToken != null && !githubToken.isEmpty();
 		String downloadPath = "plugins/" + fileName + ".zip";
 		String outputFilePath = "plugins/" + fileName + ".jar";
 		if (!isGithubActions) {
 			URL url = new URL(link);
 			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 			connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-			try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outputFilePath)) {
-				byte[] buffer = new byte[1024];
-				int bytesRead;
-				while ((bytesRead = in.read(buffer)) != -1) {
-					out.write(buffer, 0, bytesRead);
-				}
-			}
+			downloadPluginToFile(outputFilePath, connection);
 			return;
 		}
-		String githubToken = key;
+		HttpURLConnection connection;
 		try {
 			URL url = new URL(link);
-			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-			if (githubToken != null && !githubToken.isEmpty()) {
-				connection.setRequestProperty("Authorization", "Bearer " + githubToken);
-			}
+			connection = (HttpURLConnection) url.openConnection();
+		} catch (IOException e) {
+			System.out.println("Failed to download or extract plugin: " + e.getMessage());
+			e.printStackTrace();
+			return;
+		}
 
-			try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(downloadPath)) {
-				byte[] buffer = new byte[1024];
-				int bytesRead;
-				while ((bytesRead = in.read(buffer)) != -1) {
-					out.write(buffer, 0, bytesRead);
-				}
-			}
+		connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+		connection.setRequestProperty("Authorization", "Bearer " + githubToken);
+
+		try {
+			downloadPluginToFile(downloadPath, connection);
 			if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
 				extractFirstJarFromZip(downloadPath, outputFilePath);
 				new File(downloadPath).delete();
 			} else {
 				new File(downloadPath).renameTo(new File(outputFilePath));
 			}
-
 		} catch (IOException e) {
 			System.out.println("Failed to download or extract plugin: " + e.getMessage());
 			e.printStackTrace();
@@ -120,6 +109,73 @@ public class UpdatePlugins {
 		}
 	}
 
+	public void readList(File myFile, String platform, String key) {
+		CompletableFuture.runAsync(() -> {
+			if (myFile.length() == 0) {
+				System.out.println("File is empty. Please put FileSaveName: [link to plugin]");
+				return;
+			}
+			Yaml yaml = new Yaml();
+			try (FileReader reader = new FileReader(myFile)) {
+				Map<String, String> links = yaml.load(reader);
+				if (links == null) {
+					System.out.println("No data in file. Aborting readList operation.");
+					return;
+				}
+				for (Map.Entry<String, String> entry : links.entrySet()) {
+					handleUpdateEntry(platform, key, entry);
+				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		});
+	}
+
+	private void handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
+		try {
+			System.out.println(entry.getKey() + " ---- " + entry.getValue());
+			String value = entry.getValue();
+
+			boolean blobBuildPhrase = value.contains("blob.build");
+			boolean busyBiscuitPhrase = value.contains("thebusybiscuit.github.io/builds");
+
+			boolean hasSpigotPhrase = value.contains("spigotmc.org");
+			boolean hasGithubPhrase = value.contains("github.com");
+			boolean hasJenkinsPhrase = value.contains("https://ci.");
+			boolean hasBukkitPhrase = value.contains("https://dev.bukkit.org/");
+			boolean hasModrinthPhrase = value.contains("modrinth.com");
+			boolean hasHangarPhrase = value.contains("https://hangar.papermc.io/");
+
+			boolean hasAnyValidPhrase =
+				hasSpigotPhrase || hasGithubPhrase || hasJenkinsPhrase || hasBukkitPhrase || hasModrinthPhrase || hasHangarPhrase ||
+					blobBuildPhrase || busyBiscuitPhrase;
+			if (!value.endsWith("/") && hasAnyValidPhrase && !value.endsWith("]")) {
+				value = entry.getValue() + "/";
+			}
+
+			if (blobBuildPhrase) {
+				handleBlobBuild(value, key, entry);
+			} else if (busyBiscuitPhrase) {
+				handleBusyBiscuitdownload(value, key, entry);
+			} else if (hasSpigotPhrase) {
+				handleSpigotDownload(key, entry, value);
+			} else if (hasGithubPhrase) {
+				handleGitHubDownload(key, entry, value);
+			} else if (hasJenkinsPhrase) {
+				handleJenkinsDownload(key, entry, value);
+			} else if (hasBukkitPhrase) {
+				updatePlugin(value + "files/latest", entry.getKey(), key);
+			} else if (hasModrinthPhrase) {
+				handleModrinthDownload(platform, key, entry, value);
+			} else if (hasHangarPhrase) {
+				handleHangarDownload(platform, key, entry, value);
+			} else {
+				updatePlugin(value, entry.getKey(), key);
+			}
+		} catch (NullPointerException ignored) {
+		}
+	}
+
 	private void handleBlobBuild(String value, String key, Map.Entry<String, String> entry) {
 		try {
 			String[] urlParts = value.split("/");
@@ -147,7 +203,7 @@ public class UpdatePlugins {
 		}
 	}
 
-	private void handleBusyBiscuit(String value, String key, Map.Entry<String, String> entry) {
+	private void handleBusyBiscuitdownload(String value, String key, Map.Entry<String, String> entry) {
 		try {
 			Pattern pattern = Pattern.compile("builds/([^/]+)/([^/]+)");
 			Matcher matcher = pattern.matcher(value);
@@ -178,70 +234,7 @@ public class UpdatePlugins {
 		}
 	}
 
-	public void readList(File myFile, String platform, String key) throws IOException {
-		CompletableFuture.runAsync(() -> {
-			if (myFile.length() == 0) {
-				System.out.println("File is empty. Please put FileSaveName: [link to plugin]");
-				return;
-			}
-			Yaml yaml = new Yaml();
-			try (FileReader reader = new FileReader(myFile)) {
-				Map<String, String> links = yaml.load(reader);
-				if (links == null) {
-					System.out.println("No data in file. Aborting readList operation.");
-					return;
-				}
-				for (Map.Entry<String, String> entry : links.entrySet()) {
-					try {
-						System.out.println(entry.getKey() + " ---- " + entry.getValue());
-						String value = entry.getValue();
-
-						boolean blobBuildPhrase = value.contains("blob.build");
-						boolean busyBiscuitPhrase = value.contains("thebusybiscuit.github.io/builds");
-
-						boolean hasSpigotPhrase = value.contains("spigotmc.org");
-						boolean hasGithubPhrase = value.contains("github.com");
-						boolean hasJenkinsPhrase = value.contains("https://ci.");
-						boolean hasBukkitPhrase = value.contains("https://dev.bukkit.org/");
-						boolean hasModrinthPhrase = value.contains("modrinth.com");
-						boolean hasHangarPhrase = value.contains("https://hangar.papermc.io/");
-
-						boolean hasAnyValidPhrase =
-							hasSpigotPhrase || hasGithubPhrase || hasJenkinsPhrase || hasBukkitPhrase || hasModrinthPhrase || hasHangarPhrase ||
-								blobBuildPhrase || busyBiscuitPhrase;
-						if (!value.endsWith("/") && hasAnyValidPhrase && !value.endsWith("]")) {
-							value = entry.getValue() + "/";
-						}
-
-						if (blobBuildPhrase) {
-							handleBlobBuild(value, key, entry);
-						} else if (busyBiscuitPhrase) {
-							handleBusyBiscuit(value, key, entry);
-						} else if (hasSpigotPhrase) {
-							handleSpigot(key, entry, value);
-						} else if (hasGithubPhrase) {
-							handleGitHub(key, entry, value);
-						} else if (hasJenkinsPhrase) {
-							handleJenkins(key, entry, value);
-						} else if (hasBukkitPhrase) {
-							updatePlugin(value + "files/latest", entry.getKey(), key);
-						} else if (hasModrinthPhrase) {
-							handleModrinth(platform, key, entry, value);
-						} else if (hasHangarPhrase) {
-							handleHangar(platform, key, entry, value);
-						} else {
-							updatePlugin(value, entry.getKey(), key);
-						}
-					} catch (NullPointerException ignored) {
-					}
-				}
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		});
-	}
-
-	private void handleHangar(String platform, String key, Map.Entry<String, String> entry, String value) {
+	private void handleHangarDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String[] parts = value.split("/");
 			String projectName = parts[parts.length - 1];
@@ -266,7 +259,7 @@ public class UpdatePlugins {
 		}
 	}
 
-	private void handleModrinth(String platform, String key, Map.Entry<String, String> entry, String value) {
+	private void handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String[] parts = value.split("/");
 			String projectName = parts[parts.length - 1];
@@ -291,7 +284,7 @@ public class UpdatePlugins {
 		}
 	}
 
-	private void handleJenkins(String key, Map.Entry<String, String> entry, String value) {
+	private void handleJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String jenkinsLink;
 			int artifactNum = 1;
@@ -335,7 +328,7 @@ public class UpdatePlugins {
 		}
 	}
 
-	private void handleGitHub(String key, Map.Entry<String, String> entry, String value) {
+	private void handleGitHubDownload(String key, Map.Entry<String, String> entry, String value) {
 		try {
 			value = value.replace("/actions/", "/dev/");
 			if (value.endsWith("/dev/")) {
@@ -353,8 +346,8 @@ public class UpdatePlugins {
 				}
 
 				String apiUrl = "https://api.github.com/repos" + repoPath + "/actions/artifacts";
-				ObjectMapper objectMapper = new ObjectMapper();
-				JsonNode node = objectMapper.readTree(new URL(apiUrl));
+
+				JsonNode node = new ObjectMapper().readTree(new URL(apiUrl));
 
 				String downloadUrl = null;
 				int times = 0;
@@ -362,10 +355,10 @@ public class UpdatePlugins {
 				for (JsonNode artifact : node.get("artifacts")) {
 					if (artifact.has("name")) {
 						times++;
-						if (times == artifactNum) {
-							downloadUrl = artifact.get("archive_download_url").asText();
-							break;
-						}
+					}
+					if (times == artifactNum) {
+						downloadUrl = artifact.get("archive_download_url").asText();
+						break;
 					}
 				}
 
@@ -390,8 +383,7 @@ public class UpdatePlugins {
 			}
 
 			String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
-			ObjectMapper objectMapper = new ObjectMapper();
-			JsonNode node = objectMapper.readTree(new URL(apiUrl));
+			JsonNode node = new ObjectMapper().readTree(new URL(apiUrl));
 
 			String downloadUrl = null;
 			int times = 0;
@@ -418,13 +410,23 @@ public class UpdatePlugins {
 		}
 	}
 
-	private void handleSpigot(String key, Map.Entry<String, String> entry, String value) {
+	private void handleSpigotDownload(String key, Map.Entry<String, String> entry, String value) {
 		try {
 			String pluginId = extractPluginIdFromLink(value);
 			String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
 			updatePlugin(downloadUrl, entry.getKey(), key);
 		} catch (Exception e) {
 			System.out.println("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+		}
+	}
+
+	private void downloadPluginToFile(String outputFilePath, HttpURLConnection connection) throws IOException {
+		try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outputFilePath)) {
+			byte[] buffer = new byte[1024];
+			int bytesRead;
+			while ((bytesRead = in.read(buffer)) != -1) {
+				out.write(buffer, 0, bytesRead);
+			}
 		}
 	}
 }
