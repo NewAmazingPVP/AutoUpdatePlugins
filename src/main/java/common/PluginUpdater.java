@@ -317,13 +317,8 @@ public class PluginUpdater {
         } else {
             subString = value;
         }
-        try {
-            repoPath = getGitHubRepoLocation(subString);
-        } catch (MalformedURLException e) {
-            logger.info("Failed to retrieve repository from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
-            return false;
-        }
 
+        repoPath = getGitHubRepoLocation(subString);
         String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
 
         JsonNode node;
@@ -375,12 +370,7 @@ public class PluginUpdater {
             subString = value.substring(0, value.length() - 4);
         }
 
-        try {
-            repoPath = getGitHubRepoLocation(subString);
-        } catch (MalformedURLException e) {
-            logger.info("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
-            return false;
-        }
+        repoPath = getGitHubRepoLocation(subString);
 
         String apiUrl = "https://api.github.com/repos" + repoPath + "/actions/artifacts";
 
@@ -437,15 +427,14 @@ public class PluginUpdater {
         return matcher.group(1);
     }
 
-    private String getGitHubRepoLocation(String inputUrl) throws MalformedURLException {
-        URL url = new URL(inputUrl);
-        Pattern pattern = Pattern.compile("^//([^/]+)/([^/]+)");
-        Matcher matcher = pattern.matcher(url.getPath());
+    private String getGitHubRepoLocation(String inputUrl) {
+        Pattern pattern = Pattern.compile("github.com(/[^/]+/[^/]+)");
+        Matcher matcher = pattern.matcher(inputUrl);
 
         if (!matcher.find()) {
             logger.info("Repository path not found.");
             return "";
         }
-        return matcher.group(0);
+        return matcher.group(1);
     }
 }
