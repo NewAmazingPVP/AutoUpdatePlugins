@@ -269,7 +269,7 @@ public class PluginUpdater {
         try {
             node = new ObjectMapper().readTree(new URL(jenkinsLink + "lastSuccessfulBuild/api/json"));
         } catch (IOException e) {
-            logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right " + "format?" + e.getMessage());
+            logger.info("Failed to retrieve last successful build from jenkins, " + value + " , are you sure link is correct and in right " + "format?" + e.getMessage());
             return false;
         }
 
@@ -320,7 +320,7 @@ public class PluginUpdater {
         try {
             repoPath = getGitHubRepoLocation(subString);
         } catch (MalformedURLException e) {
-            logger.info("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
+            logger.info("Failed to retrieve repository from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
             return false;
         }
 
@@ -439,10 +439,10 @@ public class PluginUpdater {
 
     private String getGitHubRepoLocation(String inputUrl) throws MalformedURLException {
         URL url = new URL(inputUrl);
-        Pattern pattern = Pattern.compile("^/([^/]+)/([^/]+)");
+        Pattern pattern = Pattern.compile("^//([^/]+)/([^/]+)");
         Matcher matcher = pattern.matcher(url.getPath());
 
-        if (matcher.find()) {
+        if (!matcher.find()) {
             logger.info("Repository path not found.");
             return "";
         }
