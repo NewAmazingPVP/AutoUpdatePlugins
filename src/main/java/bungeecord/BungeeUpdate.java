@@ -81,7 +81,6 @@ public final class BungeeUpdate extends Plugin {
         public void execute(CommandSender sender, String[] args) {
             pluginUpdater.readList(myFile, "waterfall", config.getString("updates.key"));
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
-            sender.sendMessage(ChatColor.RED + "Plugins failed to update!");
         }
     }
 }
