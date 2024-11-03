@@ -90,6 +90,7 @@ LuckPerms: https://www.spigotmc.org/resources/luckperms.28140/
 PlaceholderAPI: https://www.spigotmc.org/resources/placeholderapi.6245/
 PlayerStats: https://www.spigotmc.org/resources/playerstats.102347/
 ProtocolLib: https://ci.dmulloy2.net/job/ProtocolLib/
+SlimeFun: https://blob.build/projects/Slimefun4/Dev
 SkinsRestorer: https://ci.codemc.io/job/SkinsRestorer/job/SkinsRestorerX-DEV/
 TAB: https://github.com/NEZNAMY/TAB
 ViewDistanceTweaks: https://www.spigotmc.org/resources/view-distance-tweaks.75164/
