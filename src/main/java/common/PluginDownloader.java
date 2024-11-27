@@ -73,18 +73,26 @@ public class PluginDownloader {
     private void extractFirstJarFromZip(String zipFilePath, String outputFilePath) throws IOException {
         try (ZipFile zipFile = new ZipFile(zipFilePath)) {
             List<? extends ZipEntry> entries = Collections.list(zipFile.entries());
-            Optional<? extends ZipEntry> zipEntry = entries.stream().filter(entry -> !entry.isDirectory() && entry.getName().endsWith(".jar")).findFirst();
+            Optional<? extends ZipEntry> zipEntry = entries.stream()
+                    .filter(entry -> !entry.isDirectory() &&
+                            !entry.getName().toLowerCase().contains("javadoc") &&
+                            !entry.getName().toLowerCase().contains("sources") &&
+                            !entry.getName().toLowerCase().contains("api/") &&
+                            entry.getName().endsWith(".jar"))
+                    .findFirst();
+
             if (!zipEntry.isPresent()) {
                 return;
             }
-            try (InputStream in = zipFile.getInputStream(zipEntry.get()); FileOutputStream out = new FileOutputStream(outputFilePath)) {
+
+            try (InputStream in = zipFile.getInputStream(zipEntry.get());
+                 FileOutputStream out = new FileOutputStream(outputFilePath)) {
                 byte[] buffer = new byte[1024];
                 int bytesRead;
                 while ((bytesRead = in.read(buffer)) != -1) {
                     out.write(buffer, 0, bytesRead);
                 }
             }
-            //maybe try multiple?
         }
     }
 
