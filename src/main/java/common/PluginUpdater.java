@@ -319,7 +319,7 @@ public class PluginUpdater {
         }
 
         repoPath = getGitHubRepoLocation(subString);
-        String apiUrl = "https://api.github.com/repos" + repoPath + "/releases/latest";
+        String apiUrl = "https://api.github.com/repos" + repoPath + "/releases";
 
         JsonNode node;
         try {
@@ -332,14 +332,17 @@ public class PluginUpdater {
         String downloadUrl = null;
         int times = 0;
 
-        for (JsonNode asset : node.get("assets")) {
-            if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
-                times++;
+        for (JsonNode release : node) {
+            for (JsonNode asset : release.get("assets")) {
+                if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
+                    times++;
+                }
+                if (times == artifactNum) {
+                    downloadUrl = asset.get("browser_download_url").asText();
+                    break;
+                }
             }
-            if (times == artifactNum) {
-                downloadUrl = asset.get("browser_download_url").asText();
-                break;
-            }
+            if (downloadUrl != null) break;
         }
 
         if (downloadUrl == null) {
