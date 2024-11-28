@@ -96,6 +96,37 @@ public class PluginDownloader {
         }
     }
 
+    public boolean downloadJenkinsPlugin(String link, String fileName) throws IOException {
+        String downloadPath = "plugins/" + fileName + ".zip";
+        String outputFilePath = "plugins/" + fileName + ".jar";
+        HttpURLConnection connection;
+        try {
+            connection = (HttpURLConnection) new URL(link).openConnection();
+        } catch (IOException e) {
+            logger.info("Failed to download or extract plugin: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+
+        connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+
+        try {
+            downloadPluginToFile(downloadPath, connection);
+            if (isZipFile(downloadPath)) {
+                extractFirstJarFromZip(downloadPath, outputFilePath);
+                new File(downloadPath).delete();
+            } else {
+                new File(downloadPath).renameTo(new File(outputFilePath));
+            }
+            return true;
+        } catch (IOException e) {
+            logger.info("Failed to download or extract plugin: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+
     private boolean isZipFile(String filePath) throws IOException {
         try (ZipInputStream zipInputStream = new ZipInputStream(new FileInputStream(filePath))) {
             return zipInputStream.getNextEntry() != null;

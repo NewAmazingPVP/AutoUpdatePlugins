@@ -269,8 +269,7 @@ public class PluginUpdater {
         try {
             node = new ObjectMapper().readTree(new URL(jenkinsLink + "lastSuccessfulBuild/api/json"));
         } catch (IOException e) {
-            logger.info("Failed to retrieve last successful build from jenkins, " + value + " , are you sure link is correct and in right " + "format?" + e.getMessage());
-            return false;
+            return handleAlternateJenkinsDownload(key, entry, jenkinsLink);
         }
 
         ArrayNode artifacts = (ArrayNode) node.get("artifacts");
@@ -417,6 +416,16 @@ public class PluginUpdater {
             return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
         } catch (Exception e) {
             logger.info("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean handleAlternateJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
+        try {
+            String downloadUrl = value + "lastSuccessfulBuild/artifact/*zip*/archive.zip";
+            return pluginDownloader.downloadJenkinsPlugin(downloadUrl, entry.getKey());
+        } catch (Exception e) {
+            logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
         }
     }
