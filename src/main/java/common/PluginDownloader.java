@@ -1,5 +1,7 @@
 package common;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -22,7 +24,7 @@ public class PluginDownloader {
     public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException {
         boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && githubToken != null && !githubToken.isEmpty();
         String downloadPath = "plugins/" + fileName + ".zip";
-        String outputFilePath = "plugins/" + fileName + ".jar";
+        String outputFilePath = getString(fileName);
         if (!isGithubActions) {
             HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
             connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
@@ -55,6 +57,28 @@ public class PluginDownloader {
             e.printStackTrace();
             return false;
         }
+    }
+
+    private String getString(String fileName) {
+        String outputFilePath = "plugins/" + fileName + ".jar";
+        boolean doesUpdateFolderExist = new File("plugins/update/").exists();
+        if (doesUpdateFolderExist) {
+            File directoryFile = new File("plugins/");
+            File[] files = directoryFile.listFiles();
+            if (files != null) {
+                boolean containsPlugin = false;
+                for (File file : files) {
+                    if (!file.isDirectory() && file.getName().toLowerCase().contains(fileName.toLowerCase())) {
+                        containsPlugin = true;
+                        break;
+                    }
+                }
+                if (containsPlugin) {
+                    outputFilePath = "plugins/update/" + fileName + ".jar";
+                }
+            }
+        }
+        return outputFilePath;
     }
 
     private boolean downloadPluginToFile(String outputFilePath, HttpURLConnection connection) throws IOException {
@@ -98,7 +122,7 @@ public class PluginDownloader {
 
     public boolean downloadJenkinsPlugin(String link, String fileName) throws IOException {
         String downloadPath = "plugins/" + fileName + ".zip";
-        String outputFilePath = "plugins/" + fileName + ".jar";
+        String outputFilePath = getString(fileName);
         HttpURLConnection connection;
         try {
             connection = (HttpURLConnection) new URL(link).openConnection();

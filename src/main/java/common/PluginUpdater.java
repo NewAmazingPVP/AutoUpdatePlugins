@@ -423,6 +423,7 @@ public class PluginUpdater {
     private boolean handleAlternateJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
         try {
             String downloadUrl = value + "lastSuccessfulBuild/artifact/*zip*/archive.zip";
+            // currently no multiartifact support for archive zip extraction jenkins
             return pluginDownloader.downloadJenkinsPlugin(downloadUrl, entry.getKey());
         } catch (Exception e) {
             logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
