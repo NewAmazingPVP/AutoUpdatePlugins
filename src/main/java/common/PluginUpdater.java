@@ -201,8 +201,7 @@ public class PluginUpdater {
                 response.append(inputLine);
             }
         }
-        String latestVersion = response.toString().trim();
-        return latestVersion;
+        return response.toString().trim();
     }
 
     private boolean handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {

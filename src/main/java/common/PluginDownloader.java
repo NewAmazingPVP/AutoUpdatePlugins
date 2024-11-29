@@ -120,7 +120,7 @@ public class PluginDownloader {
         }
     }
 
-    public boolean downloadJenkinsPlugin(String link, String fileName) throws IOException {
+    public boolean downloadJenkinsPlugin(String link, String fileName){
         String downloadPath = "plugins/" + fileName + ".zip";
         String outputFilePath = getString(fileName);
         HttpURLConnection connection;

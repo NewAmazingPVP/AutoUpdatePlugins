@@ -44,7 +44,7 @@ public final class VelocityUpdate {
     @Subscribe
     public void onProxyInitialize(ProxyInitializeEvent event) {
         metricsFactory.make(this, 18455);
-        pluginUpdater = new PluginUpdater(Logger.getLogger("Auto Update Plugin"));
+        pluginUpdater = new PluginUpdater(Logger.getLogger("AutoUpdatePlugins"));
         myFile = dataDirectory.resolve("list.yml").toFile();
         if (!myFile.exists()) {
             try {
