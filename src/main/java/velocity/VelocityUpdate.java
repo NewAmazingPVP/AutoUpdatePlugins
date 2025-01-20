@@ -1,5 +1,6 @@
 package velocity;
 
+import com.google.inject.Inject;
 import com.moandjiezana.toml.Toml;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
@@ -14,7 +15,6 @@ import common.PluginUpdater;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-import javax.inject.Inject;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.logging.Logger;
 
+// TODO: Use velocity-plugin.json from now on instead (remove this)
 @Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "10.5", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
