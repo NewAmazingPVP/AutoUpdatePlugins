@@ -1,0 +1,8 @@
+{
+  "id": "autoupdateplugins",
+  "name": "AutoUpdatePlugins",
+  "version": "10.5",
+  "main": "velocity.VelocityUpdate",
+  "url": "https://www.spigotmc.org/resources/autoupdateplugins.109683/",
+  "authors": "NewAmazingPVP"
+}
