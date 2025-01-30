@@ -24,7 +24,7 @@ import java.time.Duration;
 import java.util.logging.Logger;
 
 // TODO: Use velocity-plugin.json from now on instead (remove this)
-@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "10.5", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
+@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "11.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
     private PluginUpdater pluginUpdater;

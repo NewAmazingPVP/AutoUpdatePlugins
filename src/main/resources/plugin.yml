@@ -1,5 +1,5 @@
 name: AutoUpdatePlugins
-version: '10.5'
+version: '11.0'
 main: spigot.SpigotUpdate
 # hackfix (definitely will not work as intended)
 folia-supported: true
