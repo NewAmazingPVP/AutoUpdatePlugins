@@ -60,6 +60,24 @@ public class PluginUpdater {
         });
     }
 
+    /**
+     * Update a single plugin using the same logic as {@link #readList(File, String, String)}.
+     *
+     * @param platform the server platform (paper, waterfall, velocity)
+     * @param key      optional GitHub token
+     * @param name     plugin name used for the output file
+     * @param link     download link as used in list.yml
+     */
+    public void updatePlugin(String platform, String key, String name, String link) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                handleUpdateEntry(platform, key, new java.util.AbstractMap.SimpleEntry<>(name, link));
+            } catch (IOException e) {
+                logger.info("Download for " + name + " was not successful");
+            }
+        });
+    }
+
     private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
 
         try {
