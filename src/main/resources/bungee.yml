@@ -9,6 +9,12 @@ commands:
     usage: /update
     permission: autoupdateplugins.update
     permission-message: You don't have the permission <permission>
-  permissions:
-    autoupdateplugins.update:
-      description: Gives permission to use the /update command for AutoUpdatePlugins!
+  aup:
+    description: Manage AutoUpdatePlugins
+    usage: /aup <subcommand>
+    permission: autoupdateplugins.manage
+permissions:
+  autoupdateplugins.update:
+    description: Gives permission to use the /update command for AutoUpdatePlugins!
+  autoupdateplugins.manage:
+    description: Gives permission to manage the plugin list

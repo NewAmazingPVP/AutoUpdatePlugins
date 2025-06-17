@@ -12,3 +12,16 @@ commands:
     usage: /update
     permission: autoupdateplugins.update
     default: op
+  aup:
+    description: Manage AutoUpdatePlugins
+    usage: /aup <subcommand>
+    permission: autoupdateplugins.manage
+    aliases: [autoupdateplugins]
+    default: op
+permissions:
+  autoupdateplugins.update:
+    description: Allows updating plugins
+    default: op
+  autoupdateplugins.manage:
+    description: Allows managing plugin list
+    default: op

@@ -12,6 +12,7 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
 import common.PluginUpdater;
+import velocity.AupCommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
@@ -56,10 +57,11 @@ public final class VelocityUpdate {
         }
         periodUpdatePlugins();
         CommandManager commandManager = proxy.getCommandManager();
-        CommandMeta commandMeta = commandManager.metaBuilder("update").plugin(this).build();
+        CommandMeta updateMeta = commandManager.metaBuilder("update").plugin(this).build();
+        commandManager.register(updateMeta, new UpdateCommand());
 
-        SimpleCommand simpleCommand = new UpdateCommand();
-        commandManager.register(commandMeta, simpleCommand);
+        CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
+        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, config.getString("updates.key")));
     }
 
     public void periodUpdatePlugins() {

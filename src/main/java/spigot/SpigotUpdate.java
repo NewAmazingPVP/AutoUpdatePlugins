@@ -8,6 +8,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
+import spigot.AupCommand;
 
 import java.io.File;
 import java.io.IOException;
@@ -35,6 +36,9 @@ public final class SpigotUpdate extends JavaPlugin {
         }
         periodUpdatePlugins();
         getCommand("update").setExecutor(new UpdateCommand());
+        if (getCommand("aup") != null) {
+            getCommand("aup").setExecutor(new AupCommand(pluginUpdater, myFile, config));
+        }
     }
 
     public void periodUpdatePlugins() {

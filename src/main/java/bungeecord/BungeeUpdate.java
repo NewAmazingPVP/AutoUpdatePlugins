@@ -6,6 +6,7 @@ import net.md_5.bungee.api.CommandSender;
 import net.md_5.bungee.api.ProxyServer;
 import net.md_5.bungee.api.plugin.Command;
 import net.md_5.bungee.api.plugin.Plugin;
+import bungeecord.AupCommand;
 import net.md_5.bungee.config.Configuration;
 import net.md_5.bungee.config.ConfigurationProvider;
 import net.md_5.bungee.config.YamlConfiguration;
@@ -40,6 +41,7 @@ public final class BungeeUpdate extends Plugin {
         }
         periodUpdatePlugins();
         ProxyServer.getInstance().getPluginManager().registerCommand(this, new UpdateCommand());
+        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, config));
     }
 
     public void periodUpdatePlugins() {
