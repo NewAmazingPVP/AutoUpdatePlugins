@@ -5,11 +5,15 @@ import org.jetbrains.annotations.NotNull;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
@@ -22,34 +26,34 @@ public class PluginDownloader {
     }
 
     public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException {
-        boolean isGithubActions = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && githubToken != null && !githubToken.isEmpty();
-        String downloadPath = "plugins/" + fileName + ".zip";
-        String outputFilePath = getString(fileName);
-        if (!isGithubActions) {
-            HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
-            connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-            return downloadPluginToFile(outputFilePath, connection);
+        boolean requiresAuth = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && githubToken != null && !githubToken.isEmpty();
 
-        }
+        String tempDownloadPath = "plugins/" + fileName + ".zip";
+        String outputFilePath   = getString(fileName);
+
         HttpURLConnection connection;
         try {
             connection = (HttpURLConnection) new URL(link).openConnection();
+            connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+            if (requiresAuth) {
+                connection.setRequestProperty("Authorization", "Bearer " + githubToken);
+            }
         } catch (IOException e) {
-            logger.info("Failed to download or extract plugin: " + e.getMessage());
+            logger.info("Failed to open connection: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
 
-        connection.setRequestProperty("User-Agent", "AutoUpdatePlugins");
-        connection.setRequestProperty("Authorization", "Bearer " + githubToken);
-
         try {
-            downloadPluginToFile(downloadPath, connection);
-            if (isZipFile(downloadPath) && link.toLowerCase().contains("actions") && link.toLowerCase().contains("github")) {
-                extractFirstJarFromZip(downloadPath, outputFilePath);
-                new File(downloadPath).delete();
+            if (!downloadPluginToFile(tempDownloadPath, connection)) {
+                return false;
+            }
+
+            if (isZipFile(tempDownloadPath)) {
+                extractFirstJarFromZip(tempDownloadPath, outputFilePath);
+                new File(tempDownloadPath).delete();
             } else {
-                new File(downloadPath).renameTo(new File(outputFilePath));
+                new File(tempDownloadPath).renameTo(new File(outputFilePath));
             }
             return true;
         } catch (IOException e) {
@@ -58,6 +62,7 @@ public class PluginDownloader {
             return false;
         }
     }
+
 
     private String getString(String fileName) {
         String outputFilePath = "plugins/" + fileName + ".jar";
@@ -151,11 +156,16 @@ public class PluginDownloader {
     }
 
 
-    private boolean isZipFile(String filePath) throws IOException {
-        try (ZipInputStream zipInputStream = new ZipInputStream(new FileInputStream(filePath))) {
-            return zipInputStream.getNextEntry() != null;
-        } catch (IOException e) {
+    public static boolean isZipFile(String filePath) {
+        Objects.requireNonNull(filePath, "filePath");
+        Path path = Paths.get(filePath);
+
+        try (ZipFile ignored = new ZipFile(path.toFile())) {
+            return true;
+        } catch (ZipException ex) {
             return false;
+        } catch (IOException ex) {
+            throw new UncheckedIOException("I/O while probing ZIP", ex);
         }
     }
 }
