@@ -316,8 +316,9 @@ public class PluginUpdater {
     }
 
     private boolean handleGitHubDownload(String key, Map.Entry<String, String> entry, String value) {
-        value = value.replace("/actions/", "/dev/");
-        if (value.endsWith("/dev/")) {
+        value = value.replace("/actions/", "/dev");
+        value = value.replace("/actions", "/dev");
+        if (value.contains("/dev")) {
             return handleGitHubDevDownload(key, entry, value);
         }
         String repoPath;
