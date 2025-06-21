@@ -37,7 +37,9 @@ public final class SpigotUpdate extends JavaPlugin {
         periodUpdatePlugins();
         getCommand("update").setExecutor(new UpdateCommand());
         if (getCommand("aup") != null) {
-            getCommand("aup").setExecutor(new AupCommand(pluginUpdater, myFile, config));
+            AupCommand aup = new AupCommand(pluginUpdater, myFile, config);
+            getCommand("aup").setExecutor(aup);
+            getCommand("aup").setTabCompleter(aup);
         }
     }
 
