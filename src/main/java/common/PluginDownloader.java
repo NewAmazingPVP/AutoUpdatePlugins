@@ -25,8 +25,10 @@ public class PluginDownloader {
         this.logger = logger;
     }
 
-    public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException {
-        boolean requiresAuth = link.toLowerCase().contains("actions") && link.toLowerCase().contains("github") && githubToken != null && !githubToken.isEmpty();
+    public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException{
+        boolean requiresAuth = link.toLowerCase().contains("actions")
+                && link.toLowerCase().contains("github")
+                && githubToken != null && !githubToken.isEmpty();
 
         String tempDownloadPath = "plugins/" + fileName + ".zip";
         String outputFilePath   = getString(fileName);
@@ -39,8 +41,7 @@ public class PluginDownloader {
                 connection.setRequestProperty("Authorization", "Bearer " + githubToken);
             }
         } catch (IOException e) {
-            logger.info("Failed to open connection: " + e.getMessage());
-            e.printStackTrace();
+            logger.warning("Failed to open connection: " + e.getMessage());
             return false;
         }
 
@@ -49,19 +50,27 @@ public class PluginDownloader {
                 return false;
             }
 
+            File tmp = new File(tempDownloadPath);
+
             if (isZipFile(tempDownloadPath)) {
                 extractFirstJarFromZip(tempDownloadPath, outputFilePath);
-                new File(tempDownloadPath).delete();
+
+                if (new File(outputFilePath).exists()) {
+                    tmp.delete();
+                } else {
+                    tmp.renameTo(new File(outputFilePath));
+                }
             } else {
-                new File(tempDownloadPath).renameTo(new File(outputFilePath));
+                tmp.renameTo(new File(outputFilePath));
             }
             return true;
         } catch (IOException e) {
-            logger.info("Failed to download or extract plugin: " + e.getMessage());
-            e.printStackTrace();
+            logger.warning("Failed to download or extract plugin: " + e.getMessage());
             return false;
         }
     }
+
+
 
 
     private String getString(String fileName) {
