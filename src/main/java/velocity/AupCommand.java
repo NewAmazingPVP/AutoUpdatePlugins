@@ -231,6 +231,41 @@ public class AupCommand implements SimpleCommand {
         return sb.toString();
     }
 
+    @Override
+    public List<String> suggest(Invocation invocation) {
+        List<String> completions = new ArrayList<>();
+        CommandSource source = invocation.source();
+        if (!source.hasPermission("autoupdateplugins.manage")) {
+            return completions;
+        }
+        String[] args = invocation.arguments();
+        String[] subs = {"download", "update", "add", "remove", "list", "enable", "disable"};
+        if (args.length == 0) {
+            completions.addAll(Arrays.asList(subs));
+        } else if (args.length == 1) {
+            String current = args[0].toLowerCase();
+            for (String s : subs) {
+                if (s.startsWith(current)) completions.add(s);
+            }
+        } else if (args.length == 2) {
+            String sub = args[0].toLowerCase();
+            if (Arrays.asList("download", "update", "remove", "enable", "disable").contains(sub)) {
+                Map<String, PluginEntry> entries = loadEntries();
+                String current = args[1].toLowerCase();
+                for (String name : entries.keySet()) {
+                    if (name.toLowerCase().startsWith(current)) completions.add(name);
+                }
+            } else if ("list".equals(sub)) {
+                int pages = (int) Math.ceil(loadEntries().size() / 8.0);
+                for (int i = 1; i <= pages; i++) {
+                    String p = Integer.toString(i);
+                    if (p.startsWith(args[1])) completions.add(p);
+                }
+            }
+        }
+        return completions;
+    }
+
     private static class PluginEntry {
         final String name;
         final String link;

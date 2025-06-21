@@ -13,7 +13,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
 
-public class AupCommand implements CommandExecutor {
+import org.bukkit.command.TabCompleter;
+
+public class AupCommand implements CommandExecutor, TabCompleter {
 
     private final PluginUpdater pluginUpdater;
     private final File listFile;
@@ -242,5 +244,37 @@ public class AupCommand implements CommandExecutor {
             this.link = link;
             this.enabled = enabled;
         }
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        List<String> completions = new ArrayList<>();
+        if (!sender.hasPermission("autoupdateplugins.manage")) {
+            return completions;
+        }
+        String[] subs = {"download", "update", "add", "remove", "list", "enable", "disable"};
+        if (args.length == 1) {
+            String current = args[0].toLowerCase();
+            for (String s : subs) {
+                if (s.startsWith(current)) completions.add(s);
+            }
+            return completions;
+        } else if (args.length == 2) {
+            String sub = args[0].toLowerCase();
+            if (Arrays.asList("download", "update", "remove", "enable", "disable").contains(sub)) {
+                Map<String, PluginEntry> entries = loadEntries();
+                String current = args[1].toLowerCase();
+                for (String name : entries.keySet()) {
+                    if (name.toLowerCase().startsWith(current)) completions.add(name);
+                }
+            } else if ("list".equals(sub)) {
+                int pages = (int) Math.ceil(loadEntries().size() / 8.0);
+                for (int i = 1; i <= pages; i++) {
+                    String p = Integer.toString(i);
+                    if (p.startsWith(args[1])) completions.add(p);
+                }
+            }
+        }
+        return completions;
     }
 }
