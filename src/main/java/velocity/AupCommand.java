@@ -100,6 +100,10 @@ public class AupCommand implements SimpleCommand {
     private void download(CommandSource source, String[] plugins) {
         Map<String, PluginEntry> entries = loadEntries();
         if (plugins.length == 0) {
+            if (pluginUpdater.isUpdating()) {
+                source.sendMessage(Component.text("An update is already in progress. Please wait.").color(NamedTextColor.RED));
+                return;
+            }
             pluginUpdater.readList(listFile, "velocity", token);
             source.sendMessage(Component.text("Updating all plugins...").color(NamedTextColor.GREEN));
             return;

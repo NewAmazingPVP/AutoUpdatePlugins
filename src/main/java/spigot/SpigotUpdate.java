@@ -53,6 +53,10 @@ public final class SpigotUpdate extends JavaPlugin {
 
         @Override
         public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+            if (pluginUpdater.isUpdating()) {
+                sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
+                return true;
+            }
             pluginUpdater.readList(myFile, "paper", config.getString("updates.key"));
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
             return true;

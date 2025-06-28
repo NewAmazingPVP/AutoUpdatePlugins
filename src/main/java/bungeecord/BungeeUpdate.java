@@ -81,6 +81,10 @@ public final class BungeeUpdate extends Plugin {
 
         @Override
         public void execute(CommandSender sender, String[] args) {
+            if (pluginUpdater.isUpdating()) {
+                sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
+                return;
+            }
             pluginUpdater.readList(myFile, "waterfall", config.getString("updates.key"));
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
         }

@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
@@ -22,13 +23,22 @@ public class PluginUpdater {
 
     private final PluginDownloader pluginDownloader;
     private final Logger logger;
+    private final AtomicBoolean updating = new AtomicBoolean(false);
 
     public PluginUpdater(Logger logger) {
         this.logger = logger;
         pluginDownloader = new PluginDownloader(logger);
     }
 
+    public boolean isUpdating() {
+        return updating.get();
+    }
+
     public void readList(File myFile, String platform, String key) {
+        if (!updating.compareAndSet(false, true)) {
+            logger.info("Update already running. Skipping new request.");
+            return;
+        }
         CompletableFuture.runAsync(() -> {
             if (myFile.length() == 0) {
                 logger.info("File is empty. Please put FileSaveName: [link to plugin]");
@@ -57,7 +67,7 @@ public class PluginUpdater {
 
             }
 
-        });
+        }).whenComplete((v, t) -> updating.set(false));
     }
 
     /**

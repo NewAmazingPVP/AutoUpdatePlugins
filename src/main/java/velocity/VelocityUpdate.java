@@ -104,6 +104,10 @@ public final class VelocityUpdate {
         @Override
         public void execute(Invocation invocation) {
             CommandSource source = invocation.source();
+            if (pluginUpdater.isUpdating()) {
+                source.sendMessage(Component.text("An update is already in progress. Please wait.").color(NamedTextColor.RED));
+                return;
+            }
             pluginUpdater.readList(myFile, "velocity", config.getString("updates.key"));
             source.sendMessage(Component.text("Plugins are successfully updating!").color(NamedTextColor.AQUA));
         }
