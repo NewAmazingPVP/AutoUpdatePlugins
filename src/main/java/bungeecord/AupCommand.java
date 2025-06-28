@@ -99,6 +99,10 @@ public class AupCommand extends Command implements TabExecutor {
     private void download(CommandSender sender, String[] plugins) {
         Map<String, PluginEntry> entries = loadEntries();
         if (plugins.length == 0) {
+            if (pluginUpdater.isUpdating()) {
+                sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
+                return;
+            }
             pluginUpdater.readList(listFile, "waterfall", config.getString("updates.key"));
             sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
             return;
