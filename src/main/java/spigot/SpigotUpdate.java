@@ -46,7 +46,7 @@ public final class SpigotUpdate extends JavaPlugin {
         periodUpdatePlugins();
         getCommand("update").setExecutor(new UpdateCommand());
         if (getCommand("aup") != null) {
-            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"));
+            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr);
             getCommand("aup").setExecutor(aup);
             getCommand("aup").setTabCompleter(aup);
         }
@@ -120,6 +120,18 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.connectTimeoutMs = Math.max(1000, config.getInt("performance.connectTimeoutMs"));
             UpdateOptions.readTimeoutMs = Math.max(1000, config.getInt("performance.readTimeoutMs"));
             UpdateOptions.perDownloadTimeoutSec = Math.max(0, config.getInt("performance.perDownloadTimeoutSec"));
+            UpdateOptions.maxRetries = Math.max(1, config.getInt("performance.maxRetries"));
+            UpdateOptions.backoffBaseMs = Math.max(0, config.getInt("performance.backoffBaseMs"));
+            UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, config.getInt("performance.backoffMaxMs"));
+
+            java.util.List<Map<String, Object>> uaList = (java.util.List<Map<String, Object>>) config.getList("http.userAgents");
+            UpdateOptions.userAgents.clear();
+            if (uaList != null) {
+                for (Map<String, Object> m : uaList) {
+                    Object v = m.get("ua");
+                    if (v != null) UpdateOptions.userAgents.add(v.toString());
+                }
+            }
         } catch (Throwable ignored) {}
     }
 
@@ -142,8 +154,14 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("updates.bootTime", 50, "Delay in seconds after server startup before updating");
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
-        cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override");
+        cfgMgr.addDefault("http.userAgent", "", "HTTP User-Agent override (leave blank to auto-rotate)");
         cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
+        java.util.ArrayList<Map<String, String>> uas = new java.util.ArrayList<>();
+        java.util.HashMap<String, String> ua1 = new java.util.HashMap<>(); ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+        java.util.HashMap<String, String> ua2 = new java.util.HashMap<>(); ua2.put("ua", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
+        java.util.HashMap<String, String> ua3 = new java.util.HashMap<>(); ua3.put("ua", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/126.0");
+        uas.add(ua1); uas.add(ua2); uas.add(ua3);
+        cfgMgr.addDefault("http.userAgents", uas, "Optional pool of User-Agents; rotates on retry");
 
         cfgMgr.addDefault("proxy.type", "DIRECT", "Proxy type: DIRECT | HTTP | SOCKS");
         cfgMgr.addDefault("proxy.host", "127.0.0.1", "Proxy host");
@@ -165,6 +183,9 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("performance.connectTimeoutMs", 10000, "HTTP connect timeout in ms");
         cfgMgr.addDefault("performance.readTimeoutMs", 30000, "HTTP read timeout in ms");
         cfgMgr.addDefault("performance.perDownloadTimeoutSec", 0, "Optional per-download cap (0=off)");
+        cfgMgr.addDefault("performance.maxRetries", 4, "Retries per download on 403/429/5xx");
+        cfgMgr.addDefault("performance.backoffBaseMs", 500, "Backoff base in ms for retries");
+        cfgMgr.addDefault("performance.backoffMaxMs", 5000, "Backoff max in ms for retries");
 
         cfgMgr.saveConfig();
     }

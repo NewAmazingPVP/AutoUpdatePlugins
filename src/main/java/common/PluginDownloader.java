@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
@@ -66,17 +67,35 @@ public class PluginDownloader {
             return false;
         }
 
-        for (int attempt = 1; attempt <= 2; attempt++) {
+        for (int attempt = 1; attempt <= Math.max(2, common.UpdateOptions.maxRetries); attempt++) {
             File rawTmp = new File(rawTempPath);
             File outTmp = new File(outputTempPath);
             cleanupQuietly(rawTmp);
             cleanupQuietly(outTmp);
             try {
                 HttpURLConnection connection = openConnection(link, githubToken, requiresAuth);
-                if (!downloadWithVerification(rawTmp, connection)) {
-                    logger.warning("Download failed (attempt " + attempt + ")");
+                int code = 0;
+                try { code = connection.getResponseCode(); } catch (IOException ignored) {}
+                if (code == 403 || code == 429 || (code >= 500 && code < 600)) {
+                    int base = Math.max(0, common.UpdateOptions.backoffBaseMs);
+                    int max = Math.max(base, common.UpdateOptions.backoffMaxMs);
+                    int delay = Math.min(max, base * (1 << Math.min(attempt, 10))) + new java.util.Random().nextInt(250);
+                    if (common.UpdateOptions.debug) logger.info("[DEBUG] HTTP " + code + " for " + link + ", retry in ~" + delay + "ms (attempt " + attempt + ")");
+                    try { Thread.sleep(delay); } catch (InterruptedException ignored2) { Thread.currentThread().interrupt(); }
                     continue;
                 }
+                if (!downloadWithVerification(rawTmp, connection)) {
+                    logger.warning("Download failed (attempt " + attempt + ") — retrying lenient mode (old-plugin behavior)");
+                    try {
+                        connection = openConnection(link, githubToken, requiresAuth);
+                        if (!downloadLenient(rawTmp, connection)) {
+                            continue;
+                        }
+                    } catch (IOException ex) {
+                        continue;
+                    }
+                }
+
 
                 if (isZipFile(rawTempPath)) {
                     boolean extracted = extractFirstJarFromZip(rawTempPath, outputTempPath);
@@ -98,6 +117,7 @@ public class PluginDownloader {
                 }
 
                 File target = new File(outputFilePath);
+                if (common.UpdateOptions.debug) logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
                 if (common.UpdateOptions.ignoreDuplicates && target.exists() && sameDigest(target, outTmp, "MD5")) {
                     cleanupQuietly(outTmp);
                     cleanupQuietly(rawTmp);
@@ -158,33 +178,6 @@ public class PluginDownloader {
         return downloadWithVerification(new File(outputFilePath), connection);
     }
 
-    private boolean downloadWithVerification(File outFile, HttpURLConnection connection) throws IOException {
-        long expected = connection.getContentLengthLong();
-        long written = 0L;
-        try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outFile)) {
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            while ((bytesRead = in.read(buffer)) != -1) {
-                out.write(buffer, 0, bytesRead);
-                written += bytesRead;
-            }
-            out.getFD().sync();
-        }
-        if (expected >= 0 && written != expected) {
-            logger.warning("Content-Length mismatch: expected=" + expected + ", got=" + written);
-            cleanupQuietly(outFile);
-            return false;
-        }
-        if (isZipFile(outFile.getPath())) {
-            try (ZipFile zf = new ZipFile(outFile)) {
-            } catch (IOException ex) {
-                logger.warning("Downloaded ZIP appears corrupt: " + ex.getMessage());
-                cleanupQuietly(outFile);
-                return false;
-            }
-        }
-        return true;
-    }
 
     private boolean extractFirstJarFromZip(String zipFilePath, String outputFilePath) throws IOException {
         try (ZipFile zipFile = new ZipFile(zipFilePath)) {
@@ -228,13 +221,23 @@ public class PluginDownloader {
             return false;
         }
 
-        for (int attempt = 1; attempt <= 2; attempt++) {
+        for (int attempt = 1; attempt <= Math.max(2, common.UpdateOptions.maxRetries); attempt++) {
             File rawTmp = new File(rawTempPath);
             File outTmp = new File(outputTempPath);
             cleanupQuietly(rawTmp);
             cleanupQuietly(outTmp);
             try {
                 HttpURLConnection connection = openConnection(link, null, false);
+                int code = 0;
+                try { code = connection.getResponseCode(); } catch (IOException ignored) {}
+                if (code == 403 || code == 429 || (code >= 500 && code < 600)) {
+                    int base = Math.max(0, common.UpdateOptions.backoffBaseMs);
+                    int max = Math.max(base, common.UpdateOptions.backoffMaxMs);
+                    int delay = Math.min(max, base * (1 << Math.min(attempt, 10))) + new java.util.Random().nextInt(250);
+                    if (common.UpdateOptions.debug) logger.info("[DEBUG] HTTP " + code + " for " + link + ", retry in ~" + delay + "ms (attempt " + attempt + ")");
+                    try { Thread.sleep(delay); } catch (InterruptedException ignored2) { Thread.currentThread().interrupt(); }
+                    continue;
+                }
                 if (!downloadWithVerification(rawTmp, connection)) {
                     logger.info("Download failed (attempt " + attempt + ")");
                     continue;
@@ -256,6 +259,7 @@ public class PluginDownloader {
                     continue;
                 }
                 File target = new File(outputFilePath);
+                if (common.UpdateOptions.debug) logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
                 if (target.exists() && sameDigest(target, outTmp, "MD5")) {
                     cleanupQuietly(outTmp);
                     cleanupQuietly(rawTmp);
@@ -301,12 +305,33 @@ public class PluginDownloader {
 
     private HttpURLConnection openConnection(String link, String githubToken, boolean requiresAuth) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
-        connection.setRequestProperty("User-Agent", overrideUserAgent != null ? overrideUserAgent : "AutoUpdatePlugins");
-        connection.setConnectTimeout(common.UpdateOptions.connectTimeoutMs);
-        connection.setReadTimeout(common.UpdateOptions.readTimeoutMs);
+        connection.setInstanceFollowRedirects(true);
+
+        String ua = (overrideUserAgent != null && !overrideUserAgent.trim().isEmpty()
+                && !"AutoUpdatePlugins".equalsIgnoreCase(overrideUserAgent))
+                ? overrideUserAgent.trim() : null;
+        if (ua == null && common.UpdateOptions.userAgents != null && !common.UpdateOptions.userAgents.isEmpty()) {
+            ua = common.UpdateOptions.userAgents.get(new java.util.Random().nextInt(common.UpdateOptions.userAgents.size()));
+        }
+        if (ua == null) {
+            ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+        }
+
+        connection.setRequestProperty("User-Agent", ua);
+        connection.setRequestProperty("Accept-Encoding", "identity");
+        connection.setRequestProperty("Accept", "application/octet-stream, */*");
+        connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+        connection.setRequestProperty("Connection", "keep-alive");
+
         if (requiresAuth && githubToken != null && !githubToken.isEmpty()) {
             connection.setRequestProperty("Authorization", "Bearer " + githubToken);
         }
+        try {
+            java.net.URI uri = java.net.URI.create(link);
+            String origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? (":" + uri.getPort()) : "");
+            connection.setRequestProperty("Referer", origin);
+        } catch (Throwable ignored) {}
+
         if (extraHeaders != null) {
             for (java.util.Map.Entry<String, String> e : extraHeaders.entrySet()) {
                 if (e.getKey() != null && e.getValue() != null) {
@@ -314,8 +339,93 @@ public class PluginDownloader {
                 }
             }
         }
+
+        connection.setConnectTimeout(common.UpdateOptions.connectTimeoutMs);
+        connection.setReadTimeout(common.UpdateOptions.readTimeoutMs);
+
+        if (common.UpdateOptions.debug) {
+            logger.info("[DEBUG] OpenConnection url=" + link + ", auth=" + requiresAuth + ", ua=" + ua);
+        }
         return connection;
     }
+
+
+    private static boolean isGithubishHost(String host) {
+        if (host == null) return false;
+        String h = host.toLowerCase(java.util.Locale.ROOT);
+        return h.endsWith("github.com")
+                || h.endsWith("githubusercontent.com")
+                || h.endsWith("codeload.github.com")
+                || h.endsWith("objects.githubusercontent.com");
+    }
+    private boolean downloadWithVerification(File outFile, HttpURLConnection connection) throws IOException {
+        long expected = -1L;
+        boolean canTrustLength = true;
+
+        try {
+            expected = connection.getContentLengthLong();
+            String ce = connection.getHeaderField("Content-Encoding");
+            String te = connection.getHeaderField("Transfer-Encoding");
+            if (expected < 0 || (ce != null && !"identity".equalsIgnoreCase(ce)) || (te != null && "chunked".equalsIgnoreCase(te))) {
+                canTrustLength = false;
+            }
+        } catch (Throwable ignored) {}
+
+        long written = 0L;
+        try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outFile)) {
+            if (common.UpdateOptions.debug) {
+                try {
+                    logger.info("[DEBUG] HTTP code=" + connection.getResponseCode()
+                            + ", type=" + connection.getContentType()
+                            + ", length=" + expected
+                            + (connection.getHeaderField("Content-Encoding") != null
+                            ? ", enc=" + connection.getHeaderField("Content-Encoding") : ""));
+                } catch (IOException ignored) {}
+            }
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) {
+                out.write(buffer, 0, n);
+                written += n;
+            }
+            out.getFD().sync();
+        }
+
+        if (canTrustLength && expected >= 0 && written != expected) {
+            logger.warning("Content-Length mismatch: expected=" + expected + ", got=" + written);
+            cleanupQuietly(outFile);
+            return false;
+        }
+        try (FileInputStream fis = new FileInputStream(outFile)) {
+            byte[] probe = new byte[64];
+            int n = fis.read(probe);
+            String head = (n > 0) ? new String(probe, 0, n, java.nio.charset.StandardCharsets.ISO_8859_1) : "";
+            String t = head.trim().toLowerCase(java.util.Locale.ROOT);
+            if (t.startsWith("<!doctype html") || t.startsWith("<html")) {
+                cleanupQuietly(outFile);
+                return false;
+            }
+        } catch (Throwable ignored) {}
+
+        return true;
+    }
+
+
+
+
+    private boolean downloadLenient(File outFile, HttpURLConnection connection) {
+        try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outFile)) {
+            byte[] buffer = new byte[8192];
+            int r;
+            while ((r = in.read(buffer)) != -1) out.write(buffer, 0, r);
+            out.getFD().sync();
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+
 
     public boolean buildFromGitHubRepo(String repoPath, String fileName, String githubToken) throws IOException {
         String repoApi = "https://api.github.com/repos" + repoPath;
@@ -395,6 +505,7 @@ public class PluginDownloader {
             cleanupQuietly(outTmp);
             Files.createDirectories(outTmp.getParentFile().toPath());
             Files.copy(jar, outTmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            if (common.UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.toAbsolutePath());
             if (!validateJar(outTmp)) {
                 logger.info("Built jar is not a valid plugin jar.");
                 cleanupQuietly(outTmp);
@@ -402,7 +513,9 @@ public class PluginDownloader {
                 cleanupQuietly(rawZipFile);
                 return false;
             }
-            moveReplace(outTmp, new File(getString(fileName)));
+            File target = new File(getString(fileName));
+            if (common.UpdateOptions.debug) logger.info("[DEBUG] Installing built jar: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
+            moveReplace(outTmp, target);
             cleanupTreeQuietly(workDir);
             cleanupQuietly(rawZipFile);
             return true;
