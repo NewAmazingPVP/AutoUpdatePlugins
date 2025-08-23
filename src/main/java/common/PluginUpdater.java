@@ -18,6 +18,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
 public class PluginUpdater {
 
@@ -55,17 +65,27 @@ public class PluginUpdater {
                 logger.info("No data in file. Aborting readList operation.");
                 return;
             }
+            int parallel = Math.max(1, common.UpdateOptions.maxParallel);
+            ExecutorService ex = createExecutor(parallel);
+            List<Future<?>> futures = new ArrayList<>();
             for (Map.Entry<String, String> entry : links.entrySet()) {
-                boolean downloadSuccessful = false;
-                try {
-                    downloadSuccessful = handleUpdateEntry(platform, key, entry);
-                } catch (IOException ignored) {
-                }
-                if (!downloadSuccessful) {
-                    logger.info("Download for " + entry.getKey() + " was not successful");
-                }
-
+                futures.add(ex.submit(() -> {
+                    boolean ok = false;
+                    try {
+                        ok = handleUpdateEntry(platform, key, entry);
+                    } catch (IOException ignored) {}
+                    if (!ok) logger.info("Download for " + entry.getKey() + " was not successful");
+                }));
             }
+            ex.shutdown();
+            try {
+                int cap = common.UpdateOptions.perDownloadTimeoutSec;
+                if (cap > 0) {
+                    ex.awaitTermination(cap, TimeUnit.SECONDS);
+                } else {
+                    ex.awaitTermination(7, TimeUnit.DAYS);
+                }
+            } catch (InterruptedException ignored) {}
 
         }).whenComplete((v, t) -> updating.set(false));
     }
@@ -80,12 +100,31 @@ public class PluginUpdater {
      */
     public void updatePlugin(String platform, String key, String name, String link) {
         CompletableFuture.runAsync(() -> {
+            ExecutorService ex = createExecutor(1);
             try {
-                handleUpdateEntry(platform, key, new java.util.AbstractMap.SimpleEntry<>(name, link));
-            } catch (IOException e) {
-                logger.info("Download for " + name + " was not successful");
+                ex.submit(() -> {
+                    try { handleUpdateEntry(platform, key, new java.util.AbstractMap.SimpleEntry<>(name, link)); }
+                    catch (IOException e) { logger.info("Download for " + name + " was not successful"); }
+                }).get();
+            } catch (Exception ignored) {
+            } finally {
+                ex.shutdownNow();
             }
         });
+    }
+
+    private ExecutorService createExecutor(int parallelism) {
+        try {
+            Class<?> execs = Class.forName("java.util.concurrent.Executors");
+            java.lang.reflect.Method m = execs.getMethod("newVirtualThreadPerTaskExecutor");
+            Object svc = m.invoke(null);
+            return (ExecutorService) svc;
+        } catch (Throwable ignore) {
+            int p = Math.max(1, parallelism);
+            int cores = Runtime.getRuntime().availableProcessors();
+            p = Math.min(Math.max(1, p), Math.max(2, cores));
+            return Executors.newFixedThreadPool(p);
+        }
     }
 
     private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
@@ -102,8 +141,11 @@ public class PluginUpdater {
             boolean hasBukkitPhrase = value.contains("https://dev.bukkit.org/");
             boolean hasModrinthPhrase = value.contains("modrinth.com");
             boolean hasHangarPhrase = value.contains("https://hangar.papermc.io/");
+            boolean hasGuizhanssPhrase = value.contains("builds.guizhanss.com");
+            boolean hasMineBBSPhrase = value.contains("minebbs.com");
+            boolean hasCurseForgePhrase = value.contains("curseforge.com");
 
-            boolean hasAnyValidPhrase = hasSpigotPhrase || hasGithubPhrase || hasJenkinsPhrase || hasBukkitPhrase || hasModrinthPhrase || hasHangarPhrase || blobBuildPhrase || busyBiscuitPhrase;
+            boolean hasAnyValidPhrase = hasSpigotPhrase || hasGithubPhrase || hasJenkinsPhrase || hasBukkitPhrase || hasModrinthPhrase || hasHangarPhrase || blobBuildPhrase || busyBiscuitPhrase || hasGuizhanssPhrase || hasMineBBSPhrase || hasCurseForgePhrase;
             if (!value.endsWith("/") && hasAnyValidPhrase && !value.endsWith("]")) {
                 value = entry.getValue() + "/";
             }
@@ -124,8 +166,14 @@ public class PluginUpdater {
                 return handleModrinthDownload(platform, key, entry, value);
             } else if (hasHangarPhrase) {
                 return handleHangarDownload(platform, key, entry, value);
+            } else if (hasGuizhanssPhrase) {
+                return handleGuizhanssDownload(value, key, entry);
+            } else if (hasMineBBSPhrase) {
+                return handleMineBbsDownload(value, key, entry);
+            } else if (hasCurseForgePhrase) {
+                return handleCurseForgeDownload(value, key, entry);
             } else {
-                return pluginDownloader.downloadPlugin(value, entry.getKey(), key);
+                return handleGenericPageDownload(value, key, entry);
             }
         } catch (NullPointerException ignored) {
             return false;
@@ -259,17 +307,127 @@ public class PluginUpdater {
             return false;
         }
 
-        Optional<JsonNode> jsonNodeOptional = StreamSupport.stream(node.spliterator(), false).filter(jsonNode -> jsonNode.get("loaders").toString().toLowerCase().contains(platform)).findFirst();
+        String getRegex = null;
+        int qIndexMod = value.indexOf('?');
+        if (qIndexMod != -1) {
+            getRegex = queryParam(value.substring(qIndexMod + 1), "get");
+        }
+
+        Optional<JsonNode> jsonNodeOptional = StreamSupport.stream(node.spliterator(), false)
+                .filter(jsonNode -> jsonNode.get("loaders").toString().toLowerCase().contains(platform))
+                .findFirst();
 
         if (!jsonNodeOptional.isPresent()) {
             return false;
         }
 
-        String downloadUrl = jsonNodeOptional.get().get("files").get(0).get("url").asText();
+        JsonNode filesArray = jsonNodeOptional.get().get("files");
+        String downloadUrl = null;
+        if (getRegex != null) {
+            for (JsonNode f : filesArray) {
+                if (f.has("filename") && f.get("filename").asText().matches(getRegex)) {
+                    downloadUrl = f.get("url").asText();
+                    break;
+                }
+            }
+        }
+        if (downloadUrl == null) {
+            downloadUrl = filesArray.get(0).get("url").asText();
+        }
         try {
             return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
         } catch (IOException e) {
             logger.info("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean handleGuizhanssDownload(String value, String key, Map.Entry<String, String> entry) {
+        try {
+            String[] parts = value.split("/");
+            String owner = parts[parts.length - 2];
+            String repo = parts[parts.length - 1];
+            String api = String.format("https://builds.guizhanss.com/%s/%s/master/builds.json", owner, repo);
+            JsonNode data = new ObjectMapper().readTree(new URL(api));
+            String last = data.get("last_successful").asText();
+            String jarName = repo + "-" + last + ".jar";
+            String downloadUrl = String.format("https://builds.guizhanss.com/%s/%s/master/download/%s/%s", owner, repo, last, jarName);
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+        } catch (Exception e) {
+            logger.info("Failed to download from guizhanss builds: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean handleMineBbsDownload(String value, String key, Map.Entry<String, String> entry) {
+        try {
+            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").get();
+            Elements links = doc.select("a[href]");
+            String target = null;
+            for (Element a : links) {
+                String href = a.attr("abs:href");
+                if (href.endsWith(".jar") || href.contains("github.com") || href.contains("modrinth.com") || href.contains("spigotmc.org") || href.contains("hangar.papermc.io") || href.contains("download")) {
+                    target = href;
+                    break;
+                }
+            }
+            if (target == null) return false;
+            if (target.endsWith(".jar")) {
+                return pluginDownloader.downloadPlugin(target, entry.getKey(), key);
+            }
+            return handleUpdateEntry("paper", key, new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), target));
+        } catch (Exception e) {
+            logger.info("Failed to parse MineBBS page: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean handleCurseForgeDownload(String value, String key, Map.Entry<String, String> entry) {
+        try {
+            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").get();
+            Elements anchors = doc.select("a[href]");
+            String filesPage = null;
+            for (Element a : anchors) {
+                String href = a.attr("abs:href");
+                if (href.contains("/files")) { filesPage = href; break; }
+            }
+            String downloadUrl = null;
+            if (filesPage != null) {
+                Document files = Jsoup.connect(filesPage).userAgent("AutoUpdatePlugins").get();
+                for (Element a : files.select("a[href]")) {
+                    String href = a.attr("abs:href");
+                    if (href.endsWith("/download")) { downloadUrl = href; break; }
+                }
+            }
+            if (downloadUrl == null) {
+                for (Element a : anchors) {
+                    String href = a.attr("abs:href");
+                    if (href.endsWith("/download")) { downloadUrl = href; break; }
+                }
+            }
+            if (downloadUrl == null) return false;
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+        } catch (Exception e) {
+            logger.info("Failed to parse CurseForge page: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean handleGenericPageDownload(String value, String key, Map.Entry<String, String> entry) {
+        try {
+            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").get();
+            for (Element a : doc.select("a[href]")) {
+                String href = a.attr("abs:href");
+                if (href.endsWith(".jar")) {
+                    return pluginDownloader.downloadPlugin(href, entry.getKey(), key);
+                }
+                if (href.contains("github.com") || href.contains("modrinth.com") || href.contains("spigotmc.org") || href.contains("hangar.papermc.io") || href.contains("builds.guizhanss.com")) {
+                    return handleUpdateEntry("paper", key, new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), href));
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            logger.info("Failed to parse page: " + e.getMessage());
             return false;
         }
     }
@@ -300,10 +458,20 @@ public class PluginUpdater {
         }
 
         ArrayNode artifacts = (ArrayNode) node.get("artifacts");
+        String query = null;
+        int qIndex = value.indexOf('?');
+        if (qIndex != -1) {
+            query = value.substring(qIndex + 1);
+        }
+        String getRegexJ = queryParam(query, "get");
         JsonNode selectedArtifact = null;
         int times = 0;
         for (JsonNode artifact : artifacts) {
             times++;
+            if (getRegexJ != null && artifact.has("fileName") && artifact.get("fileName").asText().matches(getRegexJ)) {
+                selectedArtifact = artifact;
+                break;
+            }
             if (times == artifactNum) {
                 selectedArtifact = artifact;
                 break;
@@ -336,6 +504,12 @@ public class PluginUpdater {
         String multiIdentifier = "[";
 
         String subString;
+        String queryG = null;
+        int qIdx = value.indexOf('?');
+        if (qIdx != -1) {
+            queryG = value.substring(qIdx + 1);
+            value = value.substring(0, qIdx);
+        }
         if (value.contains(multiIdentifier)) {
             int startIndex = value.indexOf(multiIdentifier);
             int endIndex = value.indexOf("]", startIndex);
@@ -355,13 +529,22 @@ public class PluginUpdater {
             logger.info("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
             return false;
         }
-
+        String getRegexG = queryParam(queryG, "get");
+        String preParam = queryParam(queryG, "prerelease");
+        boolean allowPre = preParam != null ? Boolean.parseBoolean(preParam) : common.UpdateOptions.allowPreReleaseDefault;
         String downloadUrl = null;
         int times = 0;
 
         for (JsonNode release : node) {
+            if (!allowPre && release.has("prerelease") && release.get("prerelease").asBoolean()) {
+                continue;
+            }
             for (JsonNode asset : release.get("assets")) {
                 if (asset.has("name") && asset.get("name").asText().endsWith(".jar")) {
+                    if (getRegexG != null && asset.get("name").asText().matches(getRegexG)) {
+                        downloadUrl = asset.get("browser_download_url").asText();
+                        break;
+                    }
                     times++;
                 }
                 if (times == artifactNum) {
@@ -372,9 +555,30 @@ public class PluginUpdater {
             if (downloadUrl != null) break;
         }
 
-        if (downloadUrl == null) {
-            logger.info("Failed to find the specified artifact number in the release assets.");
-            return false;
+        boolean shouldBuild = false;
+        if (downloadUrl == null && common.UpdateOptions.autoCompileEnable && common.UpdateOptions.autoCompileWhenNoJarAsset) {
+            shouldBuild = true;
+        }
+
+        if (!shouldBuild && common.UpdateOptions.autoCompileEnable && common.UpdateOptions.autoCompileBranchNewerMonths > 0) {
+            try {
+                String defaultBranch = getDefaultBranch(repoPath, key);
+                long latestCommit = getLatestCommitDate(repoPath, defaultBranch, key);
+                long latestRelease = getLatestReleaseDate(node);
+                long months = monthsBetween(latestRelease, latestCommit);
+                if (months >= common.UpdateOptions.autoCompileBranchNewerMonths) {
+                    shouldBuild = true;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (shouldBuild) {
+            try {
+                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+            } catch (IOException e) {
+                logger.info("Failed to build plugin from GitHub repo, " + value + ": " + e.getMessage());
+                return false;
+            }
         }
 
         try {
@@ -390,7 +594,12 @@ public class PluginUpdater {
         int artifactNum = 1;
         String multiIdentifier = "[";
         String subString;
-
+        String queryD = null;
+        int qIdx = value.indexOf('?');
+        if (qIdx != -1) {
+            queryD = value.substring(qIdx + 1);
+            value = value.substring(0, qIdx);
+        }
         if (value.contains(multiIdentifier)) {
             int startIndex = value.indexOf(multiIdentifier);
             int endIndex = value.indexOf("]", startIndex);
@@ -412,10 +621,15 @@ public class PluginUpdater {
             return false;
         }
 
+        String getRegexD = queryParam(queryD, "get");
         String downloadUrl = null;
         int times = 0;
         for (JsonNode artifact : node.get("artifacts")) {
             if (artifact.has("name")) {
+                if (getRegexD != null && artifact.get("name").asText().matches(getRegexD)) {
+                    downloadUrl = artifact.get("archive_download_url").asText();
+                    break;
+                }
                 times++;
             }
             if (times == artifactNum) {
@@ -451,7 +665,6 @@ public class PluginUpdater {
     private boolean handleAlternateJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
         try {
             String downloadUrl = value + "lastSuccessfulBuild/artifact/*zip*/archive.zip";
-            // currently no multiartifact support for archive zip extraction jenkins
             return pluginDownloader.downloadJenkinsPlugin(downloadUrl, entry.getKey());
         } catch (Exception e) {
             logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
@@ -477,5 +690,70 @@ public class PluginUpdater {
             return "";
         }
         return matcher.group(1);
+    }
+
+    private String getDefaultBranch(String repoPath, String token) throws IOException {
+        String api = "https://api.github.com/repos" + repoPath;
+        HttpURLConnection conn = (HttpURLConnection) new URL(api).openConnection();
+        conn.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+        if (token != null && !token.isEmpty()) conn.setRequestProperty("Authorization", "Bearer " + token);
+        JsonNode meta;
+        try (InputStream in = conn.getInputStream()) {
+            meta = new ObjectMapper().readTree(in);
+        }
+        return meta.has("default_branch") ? meta.get("default_branch").asText() : "main";
+    }
+
+    private long getLatestCommitDate(String repoPath, String branch, String token) throws IOException {
+        String api = "https://api.github.com/repos" + repoPath + "/commits?sha=" + branch + "&per_page=1";
+        HttpURLConnection conn = (HttpURLConnection) new URL(api).openConnection();
+        conn.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+        if (token != null && !token.isEmpty()) conn.setRequestProperty("Authorization", "Bearer " + token);
+        JsonNode arr;
+        try (InputStream in = conn.getInputStream()) {
+            arr = new ObjectMapper().readTree(in);
+        }
+        if (arr.isArray() && arr.size() > 0) {
+            JsonNode commit = arr.get(0).get("commit");
+            String date = commit.get("committer").get("date").asText();
+            return javax.xml.bind.DatatypeConverter.parseDateTime(date).getTimeInMillis();
+        }
+        return 0L;
+    }
+
+    private long getLatestReleaseDate(JsonNode releases) {
+        if (releases == null || !releases.isArray() || releases.size() == 0) return 0L;
+        JsonNode r = releases.get(0);
+        String date = r.has("published_at") ? r.get("published_at").asText() : r.path("created_at").asText();
+        try {
+            return javax.xml.bind.DatatypeConverter.parseDateTime(date).getTimeInMillis();
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    private long monthsBetween(long earlierMillis, long laterMillis) {
+        if (earlierMillis <= 0 || laterMillis <= 0 || laterMillis < earlierMillis) return 0L;
+        long days = (laterMillis - earlierMillis) / (1000L * 60L * 60L * 24L);
+        return days / 30L;
+    }
+
+    private String queryParam(String query, String key) {
+        if (query == null) return null;
+        for (String part : query.split("&")) {
+            int idx = part.indexOf('=');
+            String k = idx == -1 ? part : part.substring(0, idx);
+            String v = idx == -1 ? "" : part.substring(idx + 1);
+            if (k.equalsIgnoreCase(key)) return decode(v);
+        }
+        return null;
+    }
+
+    private String decode(String s) {
+        try {
+            return java.net.URLDecoder.decode(s, "UTF-8");
+        } catch (Exception ignored) {
+            return s;
+        }
     }
 }

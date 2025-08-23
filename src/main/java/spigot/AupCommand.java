@@ -14,17 +14,20 @@ import java.nio.file.Files;
 import java.util.*;
 
 import org.bukkit.command.TabCompleter;
+import java.util.function.Supplier;
 
 public class AupCommand implements CommandExecutor, TabCompleter {
 
     private final PluginUpdater pluginUpdater;
     private final File listFile;
     private final FileConfiguration config;
+    private final Supplier<String> keySupplier;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.config = config;
+        this.keySupplier = keySupplier;
     }
 
     @Override
@@ -105,14 +108,14 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(listFile, "paper", config.getString("updates.key"));
+            pluginUpdater.readList(listFile, "paper", keySupplier.get());
             sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
             return;
         }
         for (String name : plugins) {
             PluginEntry entry = entries.get(name);
             if (entry != null) {
-                pluginUpdater.updatePlugin("paper", config.getString("updates.key"), name, entry.link);
+                pluginUpdater.updatePlugin("paper", keySupplier.get(), name, entry.link);
             } else {
                 sender.sendMessage(ChatColor.RED + "Plugin " + name + " not found in list.yml");
             }

@@ -12,6 +12,33 @@ updates:
   # Make sure to include the `public_repo` permission to make it work.
   key:
 
+# HTTP configuration (optional)
+http:
+  userAgent: "AutoUpdatePlugins"
+  headers: []
+
+# Proxy configuration (optional)
+proxy:
+  type: DIRECT # DIRECT | HTTP | SOCKS
+  host: "127.0.0.1"
+  port: 7890
+
+# Behavior toggles
+behavior:
+  zipFileCheck: true
+  ignoreDuplicates: true
+  allowPreRelease: false
+  autoCompile:
+    enable: true
+    whenNoJarAsset: true
+    branchNewerMonths: 4
+
+# Optional custom paths
+paths:
+  tempPath: ''
+  updatePath: ''
+  filePath: ''
+
 # Plugins List Configuration
 # Go to the list.yml file created in this same directory and put the plugin information that you want to periodically update in this format:
 # {fileSaveName}: {link.to.plugin}
