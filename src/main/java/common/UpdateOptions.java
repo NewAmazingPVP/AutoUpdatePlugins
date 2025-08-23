@@ -15,6 +15,10 @@ public class UpdateOptions {
     public static int readTimeoutMs = 30000;
     public static int perDownloadTimeoutSec = 0;
     public static volatile boolean debug = false;
+    public static int maxRetries = 4;
+    public static int backoffBaseMs = 500;
+    public static int backoffMaxMs = 5000;
+    public static java.util.List<String> userAgents = new java.util.ArrayList<>();
 
     private UpdateOptions() {}
 }

@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
+import common.UpdateOptions;
+import common.ConfigManager;
 
 import org.bukkit.command.TabCompleter;
 import java.util.function.Supplier;
@@ -22,12 +24,14 @@ public class AupCommand implements CommandExecutor, TabCompleter {
     private final File listFile;
     private final FileConfiguration config;
     private final Supplier<String> keySupplier;
+    private final ConfigManager cfgMgr;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier, ConfigManager cfgMgr) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.config = config;
         this.keySupplier = keySupplier;
+        this.cfgMgr = cfgMgr;
     }
 
     @Override
@@ -47,6 +51,9 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 break;
             case "update":
                 update(sender, Arrays.copyOfRange(args, 1, args.length));
+                break;
+            case "debug":
+                toggleDebug(sender, Arrays.copyOfRange(args, 1, args.length));
                 break;
             case "add":
                 if (args.length >= 3) {
@@ -94,11 +101,33 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(ChatColor.AQUA + "AutoUpdatePlugins Commands:");
         sender.sendMessage(ChatColor.AQUA + "/aup download [plugin...]" + ChatColor.GRAY + " - Download specific or all plugins");
         sender.sendMessage(ChatColor.AQUA + "/aup update [plugin...]" + ChatColor.GRAY + " - Update plugins (same as /update)");
+        sender.sendMessage(ChatColor.AQUA + "/aup debug <on|off|toggle|status>" + ChatColor.GRAY + " - Verbose debug logging");
         sender.sendMessage(ChatColor.AQUA + "/aup add <identifier> <link>");
         sender.sendMessage(ChatColor.AQUA + "/aup remove <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup list [page]");
         sender.sendMessage(ChatColor.AQUA + "/aup enable <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup disable <identifier>");
+    }
+
+    private void toggleDebug(CommandSender sender, String[] args) {
+        boolean current = UpdateOptions.debug;
+        if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
+            sender.sendMessage(ChatColor.AQUA + "Debug is currently " + (current ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
+            return;
+        }
+        boolean next = current;
+        if ("on".equalsIgnoreCase(args[0])) next = true;
+        else if ("off".equalsIgnoreCase(args[0])) next = false;
+        else if ("toggle".equalsIgnoreCase(args[0])) next = !current;
+        else {
+            sender.sendMessage(ChatColor.RED + "Usage: /aup debug <on|off|toggle|status>");
+            return;
+        }
+        UpdateOptions.debug = next;
+        try {
+            cfgMgr.setOption("behavior.debug", next);
+        } catch (Throwable ignored) {}
+        sender.sendMessage(ChatColor.AQUA + "Debug is now " + (next ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
     }
 
     private void download(CommandSender sender, String[] plugins) {
