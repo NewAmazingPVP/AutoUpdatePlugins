@@ -25,7 +25,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.logging.Logger;
 
-@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "11.5", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
+@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.0.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
     private PluginUpdater pluginUpdater;
