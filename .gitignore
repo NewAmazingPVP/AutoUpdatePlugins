@@ -23,5 +23,9 @@
 hs_err_pid*
 replay_pid*
 
+*.idea
+*.iml
+*.patch
 target/
 src/main/java/common/PluginUpdater.java~
+

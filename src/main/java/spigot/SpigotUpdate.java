@@ -69,7 +69,7 @@ public final class SpigotUpdate extends JavaPlugin {
     public void periodUpdatePlugins() {
         String cronExpression = cfgMgr.getString("updates.schedule.cron");
         SchedulerAdapter sched = new SchedulerAdapter(this);
-        Runnable job = () -> pluginUpdater.readList(myFile, "paper", cfgMgr.getString("updates.key"));
+        Runnable job = () -> pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key"));
 
         boolean scheduled = false;
         if (cronExpression != null && !cronExpression.isEmpty()) {
@@ -85,7 +85,7 @@ public final class SpigotUpdate extends JavaPlugin {
         int interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
         SchedulerAdapter sched = new SchedulerAdapter(this);
-        sched.runRepeatingAsync(bootTime, 60L * interval, () -> pluginUpdater.readList(myFile, "paper", cfgMgr.getString("updates.key")));
+        sched.runRepeatingAsync(bootTime, 60L * interval, () -> pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key")));
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
@@ -151,6 +151,7 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.maxRetries = Math.max(1, config.getInt("performance.maxRetries"));
             UpdateOptions.backoffBaseMs = Math.max(0, config.getInt("performance.backoffBaseMs"));
             UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, config.getInt("performance.backoffMaxMs"));
+            UpdateOptions.maxPerHost = Math.max(1, config.getInt("performance.maxPerHost"));
 
             java.util.List<Map<String, Object>> uaList = (java.util.List<Map<String, Object>>) config.getList("http.userAgents");
             UpdateOptions.userAgents.clear();
@@ -173,10 +174,23 @@ public final class SpigotUpdate extends JavaPlugin {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return true;
             }
-            pluginUpdater.readList(myFile, "paper", cfgMgr.getString("updates.key"));
+            pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key"));
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
             return true;
         }
+    }
+
+    private String serverPlatform() {
+        try {
+            // Presence on Folia servers
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            return "folia";
+        } catch (Throwable ignored) {}
+        try {
+            String v = Bukkit.getVersion();
+            if (v != null && v.toLowerCase().contains("folia")) return "folia";
+        } catch (Throwable ignored) {}
+        return "paper";
     }
 
     private void generateOrUpdateConfig() {
@@ -219,6 +233,7 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("performance.maxRetries", 4, "Retries per download on 403/429/5xx");
         cfgMgr.addDefault("performance.backoffBaseMs", 500, "Backoff base in ms for retries");
         cfgMgr.addDefault("performance.backoffMaxMs", 5000, "Backoff max in ms for retries");
+        cfgMgr.addDefault("performance.maxPerHost", 3, "Max concurrent downloads per host");
 
         cfgMgr.saveConfig();
     }

@@ -20,6 +20,11 @@ public final class GitHubBuild {
             String ghToken
     ) {
         try {
+            String u = repoUrl.toLowerCase(Locale.ROOT);
+            if (!u.startsWith("https://github.com/") && !u.startsWith("http://github.com/")) {
+                log.warning("[AutoUpdatePlugins] [DEBUG] Invalid GitHub repository URL: " + repoUrl);
+                return false;
+            }
             Repo ref = Repo.parse(repoUrl);
             String def = fetchDefaultBranch(log, ref, ghToken);
             if (def != null) ref = ref.withBranch(def);

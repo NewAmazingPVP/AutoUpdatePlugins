@@ -20,6 +20,8 @@ public class UpdateOptions {
     public static int backoffMaxMs = 5000;
     public static java.util.List<String> userAgents = new java.util.ArrayList<>();
     public static boolean useUpdateFolder = true;
+    public static int maxPerHost = 3;
+    public static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.Semaphore> hostSemaphores = new java.util.concurrent.ConcurrentHashMap<>();
     
 
     private UpdateOptions() {}

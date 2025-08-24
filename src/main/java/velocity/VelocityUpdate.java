@@ -162,6 +162,7 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("performance.maxRetries", 4, "Retries per download on 403/429/5xx");
         cfgMgr.addDefault("performance.backoffBaseMs", 500, "Backoff base in ms for retries");
         cfgMgr.addDefault("performance.backoffMaxMs", 5000, "Backoff max in ms for retries");
+        cfgMgr.addDefault("performance.maxPerHost", 3, "Max concurrent downloads per host");
 
         cfgMgr.saveConfig();
     }
