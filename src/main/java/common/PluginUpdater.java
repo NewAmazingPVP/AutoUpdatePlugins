@@ -10,6 +10,9 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -124,6 +127,14 @@ public class PluginUpdater {
                 ex.shutdownNow();
             }
         });
+    }
+
+    private static Path decideInstallPath(String pluginName) {
+        Path pluginsDir = Paths.get("plugins");
+        Path mainJar     = pluginsDir.resolve(pluginName + ".jar");
+        Path updateJar   = pluginsDir.resolve("update").resolve(pluginName + ".jar");
+        try { Files.createDirectories(updateJar.getParent()); } catch (Exception ignored) {}
+        return Files.exists(mainJar) ? updateJar : mainJar;
     }
 
     private ExecutorService createExecutor(int parallelism) {
@@ -549,7 +560,15 @@ public class PluginUpdater {
             String repoPath = getGitHubRepoLocation(repoUrl);
             if (repoPath == null || repoPath.isEmpty()) {
                 logger.info("Repository path not found for: " + value);
-                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+            try {
+                Path out = decideInstallPath(entry.getKey());
+                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                    return true;
+                }
+            } catch (Throwable ignored) { /* fall through to legacy builder */ }
+            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+
             }
 
             String regex = queryParam(query, "get");
@@ -616,7 +635,15 @@ public class PluginUpdater {
                 if (common.UpdateOptions.debug) {
                     logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — attempting source build.");
                 }
-                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+            try {
+                Path out = decideInstallPath(entry.getKey());
+                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                    return true;
+                }
+            } catch (Throwable ignored) { /* fall through to legacy builder */ }
+            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+
             }
 
             try {
@@ -625,7 +652,15 @@ public class PluginUpdater {
                     if (common.UpdateOptions.debug) {
                         logger.info("[DEBUG] GitHub asset download failed, falling back to source build for " + repoPath);
                     }
-                    return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+            try {
+                Path out = decideInstallPath(entry.getKey());
+                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                    return true;
+                }
+            } catch (Throwable ignored) { /* fall through to legacy builder */ }
+            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+
                 }
                 return true;
             } catch (Throwable t) {
@@ -633,7 +668,16 @@ public class PluginUpdater {
                     logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
                             + " — falling back to source build for " + repoPath);
                 }
+                try {
+                    Path out = decideInstallPath(entry.getKey());
+                    try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                    if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                        return true;
+                    }
+                } catch (Throwable ignored) { /* fall through to legacy builder */ }
+
                 return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+
             }
         } catch (Throwable t) {
             if (common.UpdateOptions.debug) {
@@ -641,12 +685,18 @@ public class PluginUpdater {
                         + " — building from source as fallback.");
             }
             try {
+                Path out = decideInstallPath(entry.getKey());
+                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                    return true;
+                }
                 String repoPath = getGitHubRepoLocation(value);
                 return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 logger.info("Failed to build plugin from GitHub repo (final fallback): " + e.getMessage());
                 return false;
             }
+
         }
     }
 

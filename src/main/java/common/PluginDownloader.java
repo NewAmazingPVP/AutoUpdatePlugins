@@ -414,7 +414,11 @@ public class PluginDownloader {
 
 
     private boolean downloadLenient(File outFile, HttpURLConnection connection) {
-        try (InputStream in = connection.getInputStream(); FileOutputStream out = new FileOutputStream(outFile)) {
+        java.io.InputStream in = null;
+        java.io.FileOutputStream out = null;
+        try {
+            in = connection.getInputStream();
+            out = new java.io.FileOutputStream(outFile);
             byte[] buffer = new byte[8192];
             int r;
             while ((r = in.read(buffer)) != -1) out.write(buffer, 0, r);
@@ -422,110 +426,110 @@ public class PluginDownloader {
             return true;
         } catch (IOException e) {
             return false;
+        } finally {
+            if (in != null) try { in.close(); } catch (Exception ignored) {}
+            if (out != null) try { out.close(); } catch (Exception ignored) {}
         }
     }
 
 
 
-    public boolean buildFromGitHubRepo(String repoPath, String fileName, String githubToken) throws IOException {
-        String repoApi = "https://api.github.com/repos" + repoPath;
+
+    public boolean buildFromGitHubRepo(String repoPath, String fileName, String key) throws IOException {
+        if (repoPath == null || repoPath.isEmpty()) throw new IOException("Invalid repo path");
+
         String defaultBranch = "main";
         try {
-            HttpURLConnection conn = openConnection(repoApi, githubToken, githubToken != null && !githubToken.isEmpty());
-            JsonNode meta = new ObjectMapper().readTree(conn.getInputStream());
-            if (meta.has("default_branch")) {
-                defaultBranch = meta.get("default_branch").asText();
+            HttpURLConnection info = openConnection("https://api.github.com/repos" + repoPath, key, true);
+            info.setRequestProperty("Accept", "application/vnd.github+json");
+            if (info.getResponseCode() == 200) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int r;
+                InputStream in = info.getInputStream();
+                try {
+                    while ((r = in.read(buf)) != -1) baos.write(buf, 0, r);
+                } finally {
+                    try { in.close(); } catch (Exception ignored) {}
+                }
+                String json = new String(baos.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+                int i = json.indexOf("\"default_branch\"");
+                if (i >= 0) {
+                    int c = json.indexOf(':', i);
+                    if (c > 0) {
+                        int q1 = json.indexOf('"', c + 1);
+                        int q2 = (q1 > 0) ? json.indexOf('"', q1 + 1) : -1;
+                        if (q1 > 0 && q2 > q1) {
+                            defaultBranch = json.substring(q1 + 1, q2);
+                        }
+                    }
+                }
             }
-        } catch (Exception e) {
-            logger.info("Unable to query default branch, falling back to 'main': " + e.getMessage());
-        }
+        } catch (Throwable ignored) {}
 
-        String zipUrl = "https://codeload.github.com" + repoPath + "/zip/refs/heads/" + defaultBranch;
-        String rawZip = "plugins/" + fileName + ".repo.tmp.zip";
-        File rawZipFile = new File(rawZip);
-        cleanupQuietly(rawZipFile);
-        try {
-            HttpURLConnection conn = openConnection(zipUrl, githubToken, githubToken != null && !githubToken.isEmpty());
-            if (!downloadWithVerification(rawZipFile, conn)) {
-                logger.info("Failed to download repository zipball for " + repoPath);
-                return false;
+        if (defaultBranch == null || defaultBranch.trim().isEmpty()) defaultBranch = "main";
+
+        String[] branches = new String[] { defaultBranch, "main", "master" };
+        File workDir = new File("plugins/build/" + fileName + "-" + System.currentTimeMillis());
+        if (!workDir.mkdirs()) throw new IOException("Unable to create build dir: " + workDir);
+
+        File zipFile = new File(workDir, "repo.zip");
+        boolean gotZip = false;
+        for (String br : branches) {
+            String zipUrl = "https://codeload.github.com" + repoPath + "/zip/refs/heads/" + br;
+            try {
+                HttpURLConnection c = openConnection(zipUrl, key, true);
+                c.setRequestProperty("Accept", "application/zip");
+                c.setRequestProperty("Accept-Encoding", "identity");
+                if (downloadLenient(zipFile, c)) { gotZip = true; break; }
+            } catch (Throwable ignored) {}
+        }
+        if (!gotZip) throw new IOException("Could not download repo zip for " + repoPath);
+
+        File repoRoot = new File(workDir, "repo");
+        if (!repoRoot.mkdirs()) throw new IOException("Unable to create repo root");
+        unzipTo(zipFile, repoRoot);
+
+        File buildRoot = findBuildRoot(repoRoot);
+        if (buildRoot == null) throw new IOException("No Maven/Gradle build file found in " + repoRoot.getAbsolutePath());
+        if (common.UpdateOptions.debug) logger.info("[DEBUG] Build root: " + buildRoot.getAbsolutePath());
+
+        boolean isMaven = new File(buildRoot, "pom.xml").exists();
+        boolean isGradle = !isMaven && (new File(buildRoot, "build.gradle").exists() || new File(buildRoot, "build.gradle.kts").exists());
+        if (!isMaven && !isGradle) throw new IOException("Unknown build system at " + buildRoot);
+
+        int exit;
+        if (isMaven) {
+            File mvnw = findFile(buildRoot, "mvnw", "mvnw.cmd", "mvnw.bat");
+            if (mvnw != null) setExecutable(mvnw);
+            String cmd = (mvnw != null) ? mvnw.getAbsolutePath() : "mvn";
+            exit = run(buildRoot, cmd, "-q", "-U", "-DskipTests", "package");
+        } else {
+            File grw = findFile(buildRoot, "gradlew", "gradlew.bat");
+            if (grw != null) setExecutable(grw);
+            String cmd = (grw != null) ? grw.getAbsolutePath() : "gradle";
+
+            boolean hasShadow = fileContains(new File(buildRoot, "build.gradle"))
+                    || fileContains(new File(buildRoot, "build.gradle.kts"));
+            String task = hasShadow ? "shadowJar" : "build";
+            exit = run(buildRoot, cmd, "--no-daemon", "-x", "test", task);
+            if (exit != 0 && hasShadow) {
+                exit = run(buildRoot, cmd, "--no-daemon", "-x", "test", "build");
             }
-        } catch (IOException e) {
-            logger.info("Failed to download repository zipball: " + e.getMessage());
-            return false;
         }
+        if (exit != 0) throw new IOException("Build failed with exit code " + exit);
 
-        String tempBase = common.UpdateOptions.tempPath != null && !common.UpdateOptions.tempPath.isEmpty() ? ensureDir(common.UpdateOptions.tempPath) : "plugins/";
-        Path workDir = Paths.get(tempBase, "build", fileName + "-" + System.currentTimeMillis());
-        Files.createDirectories(workDir);
-        try {
-            extractZipToDir(rawZipFile.toPath(), workDir);
-        } catch (IOException e) {
-            logger.info("Failed to extract repository zip: " + e.getMessage());
-            cleanupTreeQuietly(workDir);
-            cleanupQuietly(rawZipFile);
-            return false;
-        }
+        // 6) Pick the plugin jar (prefer shadow/all/shaded; skip sources/javadoc/original)
+        File jar = pickBuiltJar(buildRoot);
+        if (jar == null) throw new IOException("Could not locate built jar in " + buildRoot);
 
-        Path projectRoot = findSingleTopDir(workDir).orElse(workDir);
-
-        boolean built = false;
-        try {
-            if (hasFile(projectRoot, "gradlew") || hasFile(projectRoot, "gradlew.bat")) {
-                built = runGradle(projectRoot, true);
-            } else if (hasFile(projectRoot, "mvnw") || hasFile(projectRoot, "mvnw.cmd")) {
-                built = runMaven(projectRoot, true);
-            } else if (hasFile(projectRoot, "build.gradle") || hasFile(projectRoot, "build.gradle.kts")) {
-                built = runGradle(projectRoot, false);
-            } else if (hasFile(projectRoot, "pom.xml")) {
-                built = runMaven(projectRoot, false);
-            } else {
-                logger.info("No build files found (Gradle/Maven). Cannot build repo: " + repoPath);
-            }
-        } catch (Exception e) {
-            logger.info("Build failed: " + e.getMessage());
-            built = false;
-        }
-
-        if (!built) {
-            cleanupTreeQuietly(workDir);
-            cleanupQuietly(rawZipFile);
-            return false;
-        }
-
-        try {
-            Path jar = selectBuiltPluginJar(projectRoot);
-            if (jar == null) {
-                logger.info("Could not locate a plugin jar after build.");
-                cleanupTreeQuietly(workDir);
-                cleanupQuietly(rawZipFile);
-                return false;
-            }
-            File outTmp = new File(getString(fileName) + ".temp");
-            cleanupQuietly(outTmp);
-            Files.createDirectories(outTmp.getParentFile().toPath());
-            Files.copy(jar, outTmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            if (common.UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.toAbsolutePath());
-            if (!validateJar(outTmp)) {
-                logger.info("Built jar is not a valid plugin jar.");
-                cleanupQuietly(outTmp);
-                cleanupTreeQuietly(workDir);
-                cleanupQuietly(rawZipFile);
-                return false;
-            }
-            File target = new File(getString(fileName));
-            if (common.UpdateOptions.debug) logger.info("[DEBUG] Installing built jar: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-            moveReplace(outTmp, target);
-            cleanupTreeQuietly(workDir);
-            cleanupQuietly(rawZipFile);
-            return true;
-        } catch (IOException e) {
-            logger.info("Failed to install built jar: " + e.getMessage());
-            cleanupTreeQuietly(workDir);
-            cleanupQuietly(rawZipFile);
-            return false;
-        }
+        // 7) Move to update folder
+        File out = new File("plugins/update/" + fileName + ".jar");
+        if (common.UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
+        copyFile(jar, out);
+        return true;
     }
+
 
     private void extractZipToDir(Path zipFile, Path destDir) throws IOException {
         try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile.toFile())))) {
@@ -737,4 +741,174 @@ public class PluginDownloader {
         }
         return true;
     }
+
+
+    // unzip the downloaded repo
+    private void unzipTo(File zip, File destDir) throws IOException {
+        java.util.zip.ZipInputStream zis = null;
+        try {
+            zis = new java.util.zip.ZipInputStream(new java.io.FileInputStream(zip));
+            java.util.zip.ZipEntry e;
+            byte[] buf = new byte[8192];
+            while ((e = zis.getNextEntry()) != null) {
+                File outFile = new File(destDir, e.getName());
+                if (e.isDirectory()) { outFile.mkdirs(); continue; }
+                File parent = outFile.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                java.io.FileOutputStream fos = null;
+                try {
+                    fos = new java.io.FileOutputStream(outFile);
+                    int r; while ((r = zis.read(buf)) != -1) fos.write(buf, 0, r);
+                } finally {
+                    if (fos != null) try { fos.close(); } catch (Exception ignored) {}
+                }
+            }
+        } finally {
+            if (zis != null) try { zis.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private File findBuildRoot(File root) {
+        java.util.ArrayDeque<File> q = new java.util.ArrayDeque<File>();
+        File[] kids = root.listFiles();
+        if (kids != null) {
+            for (File f : kids) if (f.isDirectory()) q.add(f);
+        }
+        int depth = 0;
+        while (!q.isEmpty() && depth <= 3) {
+            int sz = q.size();
+            for (int i=0; i<sz; i++) {
+                File d = q.poll();
+                if (new File(d, "pom.xml").exists()) return d;
+                if (new File(d, "build.gradle").exists() || new File(d, "build.gradle.kts").exists()) return d;
+                File[] subs = d.listFiles(new java.io.FileFilter(){ public boolean accept(File f){ return f.isDirectory(); }});
+                if (subs != null) for (File s : subs) q.add(s);
+            }
+            depth++;
+        }
+        return null;
+    }
+
+    private File findFile(File dir, String... names) {
+        for (String n : names) {
+            File f = new File(dir, n);
+            if (f.exists()) return f;
+        }
+        return null;
+    }
+
+    private void setExecutable(File f) { try { f.setExecutable(true); } catch (Throwable ignored) {} }
+
+    private boolean fileContains(File f) {
+        if (!f.exists()) return false;
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+            String s = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            return s.indexOf("shadowJar") >= 0 || s.indexOf("com.github.johnrengelman.shadow") >= 0;
+        } catch (IOException e) { return false; }
+    }
+
+    private int run(File cwd, String... cmd) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.directory(cwd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+            try {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    if (common.UpdateOptions.debug) logger.info("[DEBUG] " + line);
+                }
+            } finally {
+                try { r.close(); } catch (Exception ignored) {}
+            }
+            return p.waitFor();
+        } catch (Exception e) {
+            if (common.UpdateOptions.debug) logger.info("[DEBUG] Build failed to start: " + e.getMessage());
+            return -1;
+        }
+    }
+
+    private File pickBuiltJar(File buildRoot) {
+        // collect candidates
+        java.util.List<File> candidates = new java.util.ArrayList<File>();
+        File libs = new File(buildRoot, "build/libs");
+        if (libs.isDirectory()) {
+            File[] arr = libs.listFiles(new java.io.FilenameFilter(){ public boolean accept(File d, String n){ return n.endsWith(".jar"); }});
+            if (arr != null) java.util.Collections.addAll(candidates, arr);
+        }
+        File target = new File(buildRoot, "target");
+        if (target.isDirectory()) {
+            File[] arr = target.listFiles(new java.io.FilenameFilter(){ public boolean accept(File d, String n){ return n.endsWith(".jar"); }});
+            if (arr != null) java.util.Collections.addAll(candidates, arr);
+        }
+
+        // search submodules (depth <= 3)
+        if (candidates.isEmpty()) {
+            java.util.ArrayDeque<File> q = new java.util.ArrayDeque<File>();
+            q.add(buildRoot);
+            int depth = 0;
+            while (!q.isEmpty() && depth <= 3) {
+                int sz = q.size();
+                for (int i=0; i<sz; i++) {
+                    File d = q.poll();
+                    File lib = new File(d, "build/libs");
+                    if (lib.isDirectory()) {
+                        File[] arr = lib.listFiles(new java.io.FilenameFilter(){ public boolean accept(File dd, String n){ return n.endsWith(".jar"); }});
+                        if (arr != null) java.util.Collections.addAll(candidates, arr);
+                    }
+                    File tgt = new File(d, "target");
+                    if (tgt.isDirectory()) {
+                        File[] arr = tgt.listFiles(new java.io.FilenameFilter(){ public boolean accept(File dd, String n){ return n.endsWith(".jar"); }});
+                        if (arr != null) java.util.Collections.addAll(candidates, arr);
+                    }
+                    File[] subs = d.listFiles(new java.io.FileFilter(){ public boolean accept(File f){ return f.isDirectory(); }});
+                    if (subs != null) for (File s : subs) q.add(s);
+                }
+                depth++;
+            }
+        }
+
+        if (candidates.isEmpty()) return null;
+
+        // filter out sources/javadoc/original/tests
+        java.util.List<File> filtered = new java.util.ArrayList<File>(candidates.size());
+        for (File f : candidates) {
+            String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+            if (n.indexOf("-sources") >= 0) continue;
+            if (n.indexOf("-javadoc") >= 0) continue;
+            if (n.indexOf("original-") >= 0) continue;
+            if (n.indexOf("tests") >= 0) continue;
+            if (n.indexOf("test-fixtures") >= 0) continue;
+            filtered.add(f);
+        }
+        if (filtered.isEmpty()) filtered = candidates;
+
+        // score: prefer shadow/all/shaded, then name with "plugin"
+        java.util.Collections.sort(filtered, new java.util.Comparator<File>(){
+            public int compare(File a, File b) {
+                int sa = scoreJar(a.getName().toLowerCase(java.util.Locale.ROOT));
+                int sb = scoreJar(b.getName().toLowerCase(java.util.Locale.ROOT));
+                return (sb - sa);
+            }
+        });
+
+        return filtered.get(0);
+    }
+
+    private int scoreJar(String n) {
+        int s = 0;
+        if (n.indexOf("shadow") >= 0 || n.indexOf("-all") >= 0 || n.indexOf("shaded") >= 0) s += 10;
+        if (n.indexOf("plugin") >= 0) s += 3;
+        if (n.endsWith(".jar")) s += 1;
+        return s;
+    }
+
+    private void copyFile(File src, File dst) throws IOException {
+        File parent = dst.getParentFile();
+        if (parent != null && !parent.exists()) parent.mkdirs();
+        java.nio.file.Files.copy(src.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+
 }
