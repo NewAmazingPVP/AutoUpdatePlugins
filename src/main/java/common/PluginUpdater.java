@@ -16,6 +16,7 @@ import java.nio.file.Paths;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -81,7 +82,9 @@ public class PluginUpdater {
                     try {
                         sem.acquire();
                         ok = handleUpdateEntry(platform, key, entry);
-                    } catch (IOException ignored) {
+                    } catch (IOException e) {
+                        ok = false;
+                        logger.log(Level.WARNING, "Update failed for " + entry.getKey(), e);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     } finally {
@@ -120,9 +123,10 @@ public class PluginUpdater {
             try {
                 ex.submit(() -> {
                     try { handleUpdateEntry(platform, key, new java.util.AbstractMap.SimpleEntry<>(name, link)); }
-                    catch (IOException e) { logger.info("Download for " + name + " was not successful"); }
+                    catch (IOException e) { logger.warning("Download for " + name + " was not successful: " + e.getMessage()); }
                 }).get();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                logger.log(java.util.logging.Level.SEVERE, "Error updating plugin " + name, e);
             } finally {
                 ex.shutdownNow();
             }
