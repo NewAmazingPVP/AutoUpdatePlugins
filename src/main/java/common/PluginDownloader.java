@@ -437,6 +437,7 @@ public class PluginDownloader {
 
     public boolean buildFromGitHubRepo(String repoPath, String fileName, String key) throws IOException {
         if (repoPath == null || repoPath.isEmpty()) throw new IOException("Invalid repo path");
+        if (common.UpdateOptions.debug) logger.info("[DEBUG] Starting GitHub build for " + repoPath);
 
         String defaultBranch = "main";
         try {
@@ -484,19 +485,31 @@ public class PluginDownloader {
                 if (downloadLenient(zipFile, c)) { gotZip = true; break; }
             } catch (Throwable ignored) {}
         }
-        if (!gotZip) throw new IOException("Could not download repo zip for " + repoPath);
+        if (!gotZip) {
+            logger.warning("Could not download repo zip for " + repoPath);
+            throw new IOException("Could not download repo zip for " + repoPath);
+        }
+        if (common.UpdateOptions.debug) logger.info("[DEBUG] Downloaded repo zip to " + zipFile.getAbsolutePath());
 
         File repoRoot = new File(workDir, "repo");
-        if (!repoRoot.mkdirs()) throw new IOException("Unable to create repo root");
+        if (!repoRoot.exists() && !repoRoot.mkdirs()) {
+            throw new IOException("Unable to create repo root");
+        }
         unzipTo(zipFile, repoRoot);
 
         File buildRoot = findBuildRoot(repoRoot);
-        if (buildRoot == null) throw new IOException("No Maven/Gradle build file found in " + repoRoot.getAbsolutePath());
+        if (buildRoot == null) {
+            logger.warning("No Maven/Gradle build file found in " + repoRoot.getAbsolutePath());
+            throw new IOException("No Maven/Gradle build file found in " + repoRoot.getAbsolutePath());
+        }
         if (common.UpdateOptions.debug) logger.info("[DEBUG] Build root: " + buildRoot.getAbsolutePath());
 
         boolean isMaven = new File(buildRoot, "pom.xml").exists();
         boolean isGradle = !isMaven && (new File(buildRoot, "build.gradle").exists() || new File(buildRoot, "build.gradle.kts").exists());
-        if (!isMaven && !isGradle) throw new IOException("Unknown build system at " + buildRoot);
+        if (!isMaven && !isGradle) {
+            logger.warning("Unknown build system at " + buildRoot);
+            throw new IOException("Unknown build system at " + buildRoot);
+        }
 
         int exit;
         if (isMaven) {
@@ -517,11 +530,17 @@ public class PluginDownloader {
                 exit = run(buildRoot, cmd, "--no-daemon", "-x", "test", "build");
             }
         }
-        if (exit != 0) throw new IOException("Build failed with exit code " + exit);
+        if (exit != 0) {
+            logger.warning("Build failed with exit code " + exit);
+            throw new IOException("Build failed with exit code " + exit);
+        }
 
         // 6) Pick the plugin jar (prefer shadow/all/shaded; skip sources/javadoc/original)
         File jar = pickBuiltJar(buildRoot);
-        if (jar == null) throw new IOException("Could not locate built jar in " + buildRoot);
+        if (jar == null) {
+            logger.warning("Could not locate built jar in " + buildRoot);
+            throw new IOException("Could not locate built jar in " + buildRoot);
+        }
 
         // 7) Move to update folder
         File out = new File("plugins/update/" + fileName + ".jar");
@@ -531,29 +550,7 @@ public class PluginDownloader {
     }
 
 
-    private void extractZipToDir(Path zipFile, Path destDir) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile.toFile())))) {
-            ZipEntry entry;
-            byte[] buffer = new byte[8192];
-            while ((entry = zis.getNextEntry()) != null) {
-                Path outPath = destDir.resolve(entry.getName()).normalize();
-                if (!outPath.startsWith(destDir)) {
-                    throw new IOException("Zip slip detected: " + entry.getName());
-                }
-                if (entry.isDirectory()) {
-                    Files.createDirectories(outPath);
-                } else {
-                    Files.createDirectories(outPath.getParent());
-                    try (OutputStream os = new BufferedOutputStream(new FileOutputStream(outPath.toFile()))) {
-                        int len;
-                        while ((len = zis.read(buffer)) != -1) {
-                            os.write(buffer, 0, len);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    
 
     private java.util.Optional<Path> findSingleTopDir(Path dir) throws IOException {
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir)) {
@@ -745,26 +742,26 @@ public class PluginDownloader {
 
     // unzip the downloaded repo
     private void unzipTo(File zip, File destDir) throws IOException {
-        java.util.zip.ZipInputStream zis = null;
-        try {
-            zis = new java.util.zip.ZipInputStream(new java.io.FileInputStream(zip));
-            java.util.zip.ZipEntry e;
-            byte[] buf = new byte[8192];
-            while ((e = zis.getNextEntry()) != null) {
-                File outFile = new File(destDir, e.getName());
-                if (e.isDirectory()) { outFile.mkdirs(); continue; }
-                File parent = outFile.getParentFile();
-                if (parent != null && !parent.exists()) parent.mkdirs();
-                java.io.FileOutputStream fos = null;
-                try {
-                    fos = new java.io.FileOutputStream(outFile);
-                    int r; while ((r = zis.read(buf)) != -1) fos.write(buf, 0, r);
-                } finally {
-                    if (fos != null) try { fos.close(); } catch (Exception ignored) {}
+        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)))) {
+            ZipEntry entry;
+            byte[] buffer = new byte[8192];
+            while ((entry = zis.getNextEntry()) != null) {
+                Path outPath = destDir.toPath().resolve(entry.getName()).normalize();
+                if (!outPath.startsWith(destDir.toPath())) {
+                    throw new IOException("Zip slip detected: " + entry.getName());
+                }
+                if (entry.isDirectory()) {
+                    Files.createDirectories(outPath);
+                } else {
+                    Files.createDirectories(outPath.getParent());
+                    try (OutputStream os = new BufferedOutputStream(new FileOutputStream(outPath.toFile()))) {
+                        int len;
+                        while ((len = zis.read(buffer)) != -1) {
+                            os.write(buffer, 0, len);
+                        }
+                    }
                 }
             }
-        } finally {
-            if (zis != null) try { zis.close(); } catch (Exception ignored) {}
         }
     }
 

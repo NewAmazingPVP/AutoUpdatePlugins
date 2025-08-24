@@ -74,7 +74,7 @@ public class ConfigManager {
                 }
                 extractExistingComments();
             } catch (IOException e) {
-                e.printStackTrace();
+                System.err.println("Could not load config: " + e.getMessage());
                 configMap = new HashMap<>();
             }
         } else {
@@ -191,7 +191,7 @@ public class ConfigManager {
             Files.write(configFile.toPath(), result.toString().getBytes(StandardCharsets.UTF_8));
             originalContent = result.toString();
         } catch (IOException e) {
-            e.printStackTrace();
+            System.err.println("Could not save config: " + e.getMessage());
         }
     }
 
