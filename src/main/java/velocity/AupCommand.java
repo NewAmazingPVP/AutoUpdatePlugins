@@ -16,12 +16,12 @@ public class AupCommand implements SimpleCommand {
 
     private final PluginUpdater pluginUpdater;
     private final File listFile;
-    private final String token;
+    private final common.ConfigManager cfgMgr;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, String token) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
-        this.token = token;
+        this.cfgMgr = cfgMgr;
     }
 
     @Override
@@ -80,6 +80,9 @@ public class AupCommand implements SimpleCommand {
                     source.sendMessage(Component.text("Usage: /aup disable <identifier>").color(NamedTextColor.RED));
                 }
                 break;
+            case "debug":
+                toggleDebug(source, Arrays.copyOfRange(args, 1, args.length));
+                break;
             default:
                 sendHelp(source);
                 break;
@@ -90,11 +93,31 @@ public class AupCommand implements SimpleCommand {
         source.sendMessage(Component.text("AutoUpdatePlugins Commands:").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup download [plugin...]").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup update [plugin...]").color(NamedTextColor.AQUA));
+        source.sendMessage(Component.text("/aup debug <on|off|toggle|status>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup add <identifier> <link>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup remove <identifier>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup list [page]").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup enable <identifier>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup disable <identifier>").color(NamedTextColor.AQUA));
+    }
+
+    private void toggleDebug(CommandSource sender, String[] args) {
+        boolean current = common.UpdateOptions.debug;
+        if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
+            sender.sendMessage(Component.text("Debug is currently ").color(NamedTextColor.AQUA).append(Component.text(current ? "ON" : "OFF").color(current ? NamedTextColor.GREEN : NamedTextColor.RED)));
+            return;
+        }
+        boolean next = current;
+        if ("on".equalsIgnoreCase(args[0])) next = true;
+        else if ("off".equalsIgnoreCase(args[0])) next = false;
+        else if ("toggle".equalsIgnoreCase(args[0])) next = !current;
+        else {
+            sender.sendMessage(Component.text("Usage: /aup debug <on|off|toggle|status>").color(NamedTextColor.RED));
+            return;
+        }
+        common.UpdateOptions.debug = next;
+        cfgMgr.setOption("behavior.debug", next);
+        sender.sendMessage(Component.text("Debug is now ").color(NamedTextColor.AQUA).append(Component.text(next ? "ON" : "OFF").color(next ? NamedTextColor.GREEN : NamedTextColor.RED)));
     }
 
     private void download(CommandSource source, String[] plugins) {
@@ -104,14 +127,14 @@ public class AupCommand implements SimpleCommand {
                 source.sendMessage(Component.text("An update is already in progress. Please wait.").color(NamedTextColor.RED));
                 return;
             }
-            pluginUpdater.readList(listFile, "velocity", token);
+            pluginUpdater.readList(listFile, "velocity", cfgMgr.getString("updates.key"));
             source.sendMessage(Component.text("Updating all plugins...").color(NamedTextColor.GREEN));
             return;
         }
         for (String name : plugins) {
             PluginEntry entry = entries.get(name);
             if (entry != null) {
-                pluginUpdater.updatePlugin("velocity", token, name, entry.link);
+                pluginUpdater.updatePlugin("velocity", cfgMgr.getString("updates.key"), name, entry.link);
             } else {
                 source.sendMessage(Component.text("Plugin " + name + " not found in list.yml").color(NamedTextColor.RED));
             }

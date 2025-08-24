@@ -132,9 +132,14 @@ public class PluginUpdater {
     private static Path decideInstallPath(String pluginName) {
         Path pluginsDir = Paths.get("plugins");
         Path mainJar     = pluginsDir.resolve(pluginName + ".jar");
-        Path updateJar   = pluginsDir.resolve("update").resolve(pluginName + ".jar");
-        try { Files.createDirectories(updateJar.getParent()); } catch (Exception ignored) {}
-        return Files.exists(mainJar) ? updateJar : mainJar;
+
+        if (UpdateOptions.useUpdateFolder) {
+            Path updateJar   = pluginsDir.resolve("update").resolve(pluginName + ".jar");
+            try { Files.createDirectories(updateJar.getParent()); } catch (Exception ignored) {}
+            return Files.exists(mainJar) ? updateJar : mainJar;
+        } else {
+            return mainJar;
+        }
     }
 
     private ExecutorService createExecutor(int parallelism) {

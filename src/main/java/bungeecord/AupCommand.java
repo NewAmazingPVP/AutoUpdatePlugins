@@ -17,13 +17,13 @@ public class AupCommand extends Command implements TabExecutor {
 
     private final PluginUpdater pluginUpdater;
     private final File listFile;
-    private final Configuration config;
+    private final common.ConfigManager cfgMgr;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, Configuration config) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr) {
         super("aup", "autoupdateplugins.manage", "autoupdateplugins");
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
-        this.config = config;
+        this.cfgMgr = cfgMgr;
     }
 
     @Override
@@ -79,6 +79,9 @@ public class AupCommand extends Command implements TabExecutor {
                     sender.sendMessage(ChatColor.RED + "Usage: /aup disable <identifier>");
                 }
                 break;
+            case "debug":
+                toggleDebug(sender, Arrays.copyOfRange(args, 1, args.length));
+                break;
             default:
                 sendHelp(sender);
                 break;
@@ -89,11 +92,31 @@ public class AupCommand extends Command implements TabExecutor {
         sender.sendMessage(ChatColor.AQUA + "AutoUpdatePlugins Commands:");
         sender.sendMessage(ChatColor.AQUA + "/aup download [plugin...]" + ChatColor.GRAY + " - Download specific or all plugins");
         sender.sendMessage(ChatColor.AQUA + "/aup update [plugin...]" + ChatColor.GRAY + " - Update plugins");
+        sender.sendMessage(ChatColor.AQUA + "/aup debug <on|off|toggle|status>" + ChatColor.GRAY + " - Verbose debug logging");
         sender.sendMessage(ChatColor.AQUA + "/aup add <identifier> <link>");
         sender.sendMessage(ChatColor.AQUA + "/aup remove <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup list [page]");
         sender.sendMessage(ChatColor.AQUA + "/aup enable <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup disable <identifier>");
+    }
+
+    private void toggleDebug(CommandSender sender, String[] args) {
+        boolean current = common.UpdateOptions.debug;
+        if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
+            sender.sendMessage(ChatColor.AQUA + "Debug is currently " + (current ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
+            return;
+        }
+        boolean next = current;
+        if ("on".equalsIgnoreCase(args[0])) next = true;
+        else if ("off".equalsIgnoreCase(args[0])) next = false;
+        else if ("toggle".equalsIgnoreCase(args[0])) next = !current;
+        else {
+            sender.sendMessage(ChatColor.RED + "Usage: /aup debug <on|off|toggle|status>");
+            return;
+        }
+        common.UpdateOptions.debug = next;
+        cfgMgr.setOption("behavior.debug", next);
+        sender.sendMessage(ChatColor.AQUA + "Debug is now " + (next ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
     }
 
     private void download(CommandSender sender, String[] plugins) {
@@ -103,14 +126,14 @@ public class AupCommand extends Command implements TabExecutor {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(listFile, "waterfall", config.getString("updates.key"));
+            pluginUpdater.readList(listFile, "waterfall", cfgMgr.getString("updates.key"));
             sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
             return;
         }
         for (String name : plugins) {
             PluginEntry entry = entries.get(name);
             if (entry != null) {
-                pluginUpdater.updatePlugin("waterfall", config.getString("updates.key"), name, entry.link);
+                pluginUpdater.updatePlugin("waterfall", cfgMgr.getString("updates.key"), name, entry.link);
             } else {
                 sender.sendMessage(ChatColor.RED + "Plugin " + name + " not found in list.yml");
             }

@@ -112,6 +112,7 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.autoCompileWhenNoJarAsset = config.getBoolean("behavior.autoCompile.whenNoJarAsset");
             UpdateOptions.autoCompileBranchNewerMonths = config.getInt("behavior.autoCompile.branchNewerMonths");
             UpdateOptions.allowPreReleaseDefault = config.getBoolean("behavior.allowPreRelease");
+            UpdateOptions.useUpdateFolder = config.getBoolean("behavior.useUpdateFolder");
             UpdateOptions.debug = config.getBoolean("behavior.debug");
             UpdateOptions.tempPath = config.getString("paths.tempPath");
             UpdateOptions.updatePath = config.getString("paths.updatePath");
@@ -174,6 +175,7 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("behavior.autoCompile.enable", true, "Enable source build fallback for GitHub");
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 4, "Build when default branch is newer by N months");
+        cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
