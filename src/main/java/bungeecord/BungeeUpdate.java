@@ -8,6 +8,7 @@ import net.md_5.bungee.api.CommandSender;
 import net.md_5.bungee.api.ProxyServer;
 import net.md_5.bungee.api.plugin.Command;
 import net.md_5.bungee.api.plugin.Plugin;
+import common.CronScheduler;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,21 +39,52 @@ public final class BungeeUpdate extends Plugin {
         }
         periodUpdatePlugins();
         ProxyServer.getInstance().getPluginManager().registerCommand(this, new UpdateCommand());
-        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, cfgMgr));
+        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig));
     }
 
+    private void reloadPluginConfig() {
+        this.cfgMgr = new ConfigManager(getDataFolder(), "config.yml");
+        generateOrUpdateConfig();
+        UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
+        getLogger().info("AutoUpdatePlugins configuration reloaded.");
+    }
     public void periodUpdatePlugins() {
+        String cronExpression = cfgMgr.getString("updates.schedule.cron");
+
+        boolean scheduled = false;
+        if (cronExpression != null && !cronExpression.isEmpty()) {
+            String tz = cfgMgr.getString("updates.schedule.timezone");
+            scheduled = CronScheduler.scheduleRecurring(
+                    cronExpression,
+                    tz,
+                    (delay, task) -> getProxy().getScheduler().schedule(this, task, delay, TimeUnit.SECONDS),
+                    getLogger(),
+                    () -> getProxy().getScheduler().runAsync(this, () -> pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key")))
+            );
+        }
+        if (!scheduled) {
+            scheduleIntervalUpdates();
+        }
+    }
+
+    private void scheduleIntervalUpdates() {
         int interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
-        getProxy().getScheduler().schedule(this, () -> getProxy().getScheduler().runAsync(this, () -> pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key"))), bootTime, interval, TimeUnit.SECONDS);
+        long periodSeconds = 60L * interval;
+        getProxy().getScheduler().schedule(this,
+                () -> getProxy().getScheduler().runAsync(this, () -> pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key"))),
+                bootTime, periodSeconds, TimeUnit.SECONDS);
+        getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
     private void generateOrUpdateConfig() {
         cfgMgr.addDefault("updates.interval", 120, "Time between plugin updates in minutes");
         cfgMgr.addDefault("updates.bootTime", 50, "Delay in seconds after server startup before updating");
+        cfgMgr.addDefault("updates.schedule.cron", "", "Experimental: A cron expression to schedule updates. Overrides interval and bootTime if set.");
+        cfgMgr.addDefault("updates.schedule.timezone", "UTC", "The timezone for the cron schedule.");
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
-        cfgMgr.addDefault("http.userAgent", "", "HTTP User-Agent override (leave blank to auto-rotate)");
+        cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
         cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
         java.util.ArrayList<java.util.Map<String, String>> uas = new java.util.ArrayList<>();
         java.util.HashMap<String, String> ua1 = new java.util.HashMap<>(); ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
@@ -62,8 +94,8 @@ public final class BungeeUpdate extends Plugin {
         cfgMgr.addDefault("http.userAgents", uas, "Optional pool of User-Agents; rotates on retry");
 
         cfgMgr.addDefault("proxy.type", "DIRECT", "Proxy type: DIRECT | HTTP | SOCKS");
-        cfgMgr.addDefault("proxy.host", "127.0.0.1", "Proxy host");
-        cfgMgr.addDefault("proxy.port", 7890, "Proxy port");
+        cfgMgr.addDefault("proxy.host", "proxy.example.com", "Proxy host");
+        cfgMgr.addDefault("proxy.port", 8080, "Proxy port");
 
         cfgMgr.addDefault("behavior.zipFileCheck", true, "Open .jar/.zip to verify integrity");
         cfgMgr.addDefault("behavior.ignoreDuplicates", true, "Skip replace when MD5 is identical");
@@ -73,6 +105,7 @@ public final class BungeeUpdate extends Plugin {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 4, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
+        
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
@@ -107,6 +140,3 @@ public final class BungeeUpdate extends Plugin {
         }
     }
 }
-
-
-

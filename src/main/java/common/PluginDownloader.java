@@ -146,6 +146,7 @@ public class PluginDownloader {
         if (configuredFilePath != null && !configuredFilePath.isEmpty()) {
             return ensureDir(configuredFilePath) + fileName + ".jar";
         }
+        
         String outputFilePath = basePlugins + fileName + ".jar";
         String updateDir = configuredUpdatePath != null && !configuredUpdatePath.isEmpty() ? ensureDir(configuredUpdatePath) : basePlugins + "update/";
         boolean doesUpdateFolderExist = new File(updateDir).exists();

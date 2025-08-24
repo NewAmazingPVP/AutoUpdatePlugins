@@ -15,6 +15,7 @@ import common.PluginUpdater;
 import common.UpdateOptions;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import common.CronScheduler;
 
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
@@ -34,6 +35,7 @@ public final class VelocityUpdate {
     private final Path dataDirectory;
     private final Metrics.Factory metricsFactory;
     private ConfigManager cfgMgr;
+    private final Logger logger = Logger.getLogger("AutoUpdatePlugins");
 
     @Inject
     public VelocityUpdate(ProxyServer proxy, @DataDirectory Path dataDirectory, Metrics.Factory metricsFactory) {
@@ -42,6 +44,11 @@ public final class VelocityUpdate {
         this.metricsFactory = metricsFactory;
     }
 
+    private void reloadPluginConfig() {
+        this.cfgMgr = new ConfigManager(dataDirectory.toFile(), "config.yml");
+        generateOrUpdateConfig();
+        logger.info("AutoUpdatePlugins configuration reloaded.");
+    }
     private void handleUpdateFolder() {
         Path updateDir = dataDirectory.getParent().resolve("update");
         if (Files.isDirectory(updateDir)) {
@@ -66,7 +73,7 @@ public final class VelocityUpdate {
     public void onProxyInitialize(ProxyInitializeEvent event) {
         handleUpdateFolder();
         metricsFactory.make(this, 18455);
-        pluginUpdater = new PluginUpdater(Logger.getLogger("AutoUpdatePlugins"));
+        pluginUpdater = new PluginUpdater(logger);
         cfgMgr = new ConfigManager(dataDirectory.toFile(), "config.yml");
         generateOrUpdateConfig();
         UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
@@ -84,22 +91,44 @@ public final class VelocityUpdate {
         commandManager.register(updateMeta, new UpdateCommand());
 
         CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
-        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr));
+        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig));
     }
 
     public void periodUpdatePlugins() {
+        String cronExpression = cfgMgr.getString("updates.schedule.cron");
+
+        boolean scheduled = false;
+        if (cronExpression != null && !cronExpression.isEmpty()) {
+            String tz = cfgMgr.getString("updates.schedule.timezone");
+            scheduled = CronScheduler.scheduleRecurring(
+                    cronExpression,
+                    tz,
+                    (delay, task) -> proxy.getScheduler().buildTask(this, task).delay(Duration.ofSeconds(delay)).schedule(),
+                    getLogger(),
+                    () -> pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"))
+            );
+        }
+        if (!scheduled) {
+            scheduleIntervalUpdates();
+        }
+    }
+
+    private void scheduleIntervalUpdates() {
         long interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
 
         proxy.getScheduler().buildTask(this, () -> pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"))).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
+        getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
     private void generateOrUpdateConfig() {
         cfgMgr.addDefault("updates.interval", 120, "Time between plugin updates in minutes");
         cfgMgr.addDefault("updates.bootTime", 50, "Delay in seconds after server startup before updating");
+        cfgMgr.addDefault("updates.schedule.cron", "", "Experimental: A cron expression to schedule updates. Overrides interval and bootTime if set.");
+        cfgMgr.addDefault("updates.schedule.timezone", "UTC", "The timezone for the cron schedule.");
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
-        cfgMgr.addDefault("http.userAgent", "", "HTTP User-Agent override (leave blank to auto-rotate)");
+        cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
         cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
         java.util.ArrayList<java.util.Map<String, String>> uas = new java.util.ArrayList<>();
         java.util.HashMap<String, String> ua1 = new java.util.HashMap<>(); ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
@@ -109,8 +138,8 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("http.userAgents", uas, "Optional pool of User-Agents; rotates on retry");
 
         cfgMgr.addDefault("proxy.type", "DIRECT", "Proxy type: DIRECT | HTTP | SOCKS");
-        cfgMgr.addDefault("proxy.host", "127.0.0.1", "Proxy host");
-        cfgMgr.addDefault("proxy.port", 7890, "Proxy port");
+        cfgMgr.addDefault("proxy.host", "proxy.example.com", "Proxy host");
+        cfgMgr.addDefault("proxy.port", 8080, "Proxy port");
 
         cfgMgr.addDefault("behavior.zipFileCheck", true, "Open .jar/.zip to verify integrity");
         cfgMgr.addDefault("behavior.ignoreDuplicates", true, "Skip replace when MD5 is identical");
@@ -120,6 +149,7 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 4, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
+        
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
@@ -136,6 +166,9 @@ public final class VelocityUpdate {
         cfgMgr.saveConfig();
     }
 
+    private Logger getLogger() {
+        return logger;
+    }
     
 
     public class UpdateCommand implements SimpleCommand {

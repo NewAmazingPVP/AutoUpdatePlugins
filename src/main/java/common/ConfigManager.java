@@ -26,6 +26,8 @@ public class ConfigManager {
     private final StandardRepresenter representer;
     private final Map<String, String> commentMap;
     private final Set<String> processedPaths;
+    private String leadingComments = "";
+    private String trailingComments = "";
 
     public ConfigManager(File dataFolder, String fileName) {
         if (!dataFolder.exists()) {
@@ -45,6 +47,14 @@ public class ConfigManager {
                     return super.representScalar(tag, value, ScalarStyle.SINGLE_QUOTED);
                 }
                 return super.representScalar(tag, value, style);
+            }
+            @Override
+            protected Node representMapping(Tag tag, Map<?, ?> mapping, FlowStyle flowStyle) {
+                return super.representMapping(tag, mapping, FlowStyle.BLOCK);
+            }
+            @Override
+            protected Node representSequence(Tag tag, Iterable<?> sequence, FlowStyle flowStyle) {
+                return super.representSequence(tag, sequence, FlowStyle.BLOCK);
             }
         };
 
@@ -68,18 +78,18 @@ public class ConfigManager {
             try {
                 originalContent = new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);
                 Load loader = new Load(loadSettings);
-                configMap = (Map<String, Object>) loader.loadFromString(originalContent);
+                configMap = toLinkedMap((Map<String, Object>) loader.loadFromString(originalContent));
                 if (configMap == null) {
-                    configMap = new HashMap<>();
+                    configMap = new LinkedHashMap<>();
                 }
                 extractExistingComments();
             } catch (IOException e) {
                 System.err.println("Could not load config: " + e.getMessage());
-                configMap = new HashMap<>();
+                configMap = new LinkedHashMap<>();
             }
         } else {
-            configMap = new HashMap<>();
-            saveConfig();
+            // Fresh config; let callers add defaults before first save
+            configMap = new LinkedHashMap<>();
         }
     }
 
@@ -92,8 +102,26 @@ public class ConfigManager {
         StringBuilder currentComment = new StringBuilder();
         Stack<String> pathStack = new Stack<>();
         int indentLevel = 0;
+        boolean seenFirstKey = false;
 
-        for (String line : lines) {
+        // Capture leading comments/header block (including blank lines) before first key
+        StringBuilder header = new StringBuilder();
+        int idx = 0;
+        while (idx < lines.length) {
+            String t = lines[idx].trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                header.append(lines[idx]).append("\n");
+                idx++;
+            } else {
+                break;
+            }
+        }
+        if (header.length() > 0) {
+            leadingComments = header.toString();
+        }
+        // Continue scanning from idx for key-attached comments
+        for (int j = idx; j < lines.length; j++) {
+            String line = lines[j];
             String trimmed = line.trim();
             int currentIndent = getIndentLevel(line);
 
@@ -102,34 +130,43 @@ public class ConfigManager {
                 indentLevel -= 2;
             }
 
-            if (trimmed.startsWith("#")) {
+            if (trimmed.startsWith("#") || trimmed.isEmpty()) {
                 if (currentComment.length() > 0) {
                     currentComment.append("\n");
                 }
-                currentComment.append(line);
-            } else if (!trimmed.isEmpty()) {
-                if (trimmed.contains(":")) {
-                    String key = trimmed.split(":", 2)[0].trim();
-
-                    if (currentIndent > indentLevel) {
-                        pathStack.push(key);
-                        indentLevel = currentIndent;
-                    } else {
-                        if (!pathStack.isEmpty()) {
-                            pathStack.pop();
-                        }
-                        pathStack.push(key);
-                    }
-
-                    String currentPath = String.join(".", pathStack);
-
-                    if (currentComment.length() > 0) {
-                        commentMap.put(currentPath, currentComment.toString());
-                        processedPaths.add(currentPath);
-                        currentComment = new StringBuilder();
-                    }
+                if (!trimmed.isEmpty()) {
+                    currentComment.append(line);
+                } else {
+                    // Preserve blank line within a comment block by emitting an empty line
+                    // (we already appended a newline above)
                 }
+            } else if (trimmed.contains(":")) {
+                String key = trimmed.split(":", 2)[0].trim();
+
+                if (currentIndent > indentLevel) {
+                    pathStack.push(key);
+                    indentLevel = currentIndent;
+                } else {
+                    if (!pathStack.isEmpty()) {
+                        pathStack.pop();
+                    }
+                    pathStack.push(key);
+                }
+
+                String currentPath = String.join(".", pathStack);
+
+                if (currentComment.length() > 0) {
+                    commentMap.put(currentPath, currentComment.toString());
+                    processedPaths.add(currentPath);
+                    currentComment = new StringBuilder();
+                }
+                seenFirstKey = true;
             }
+        }
+
+        // Any dangling comments at end of file not attached to a key become trailing comments
+        if (currentComment.length() > 0 && seenFirstKey) {
+            trailingComments = currentComment.toString();
         }
     }
 
@@ -150,6 +187,13 @@ public class ConfigManager {
             StringBuilder result = new StringBuilder();
             Stack<String> pathStack = new Stack<>();
             int currentIndent = 0;
+
+            if (leadingComments != null && !leadingComments.isEmpty()) {
+                result.append(leadingComments);
+                if (!leadingComments.endsWith("\n")) {
+                    result.append("\n");
+                }
+            }
 
             for (int i = 0; i < lines.length; i++) {
                 String line = lines[i];
@@ -177,13 +221,20 @@ public class ConfigManager {
                     String fullPath = String.join(".", pathStack);
                     String comment = commentMap.get(fullPath);
 
-                    if (comment != null) {
+                    if (comment != null && !comment.isEmpty()) {
                         result.append(comment).append("\n");
                     }
                 }
 
                 result.append(line);
                 if (i < lines.length - 1) {
+                    result.append("\n");
+                }
+            }
+
+            if (trailingComments != null && !trailingComments.isEmpty()) {
+                result.append("\n").append(trailingComments);
+                if (!trailingComments.endsWith("\n")) {
                     result.append("\n");
                 }
             }
@@ -440,8 +491,31 @@ public class ConfigManager {
         String[] keys = path.split("\\.");
         Map<String, Object> currentMap = configMap;
         for (int i = 0; i < keys.length - 1; i++) {
-            currentMap = (Map<String, Object>) currentMap.computeIfAbsent(keys[i], k -> new HashMap<>());
+            currentMap = (Map<String, Object>) currentMap.computeIfAbsent(keys[i], k -> new LinkedHashMap<>());
         }
         currentMap.put(keys[keys.length - 1], value);
+    }
+
+    private LinkedHashMap<String, Object> toLinkedMap(Map<String, Object> map) {
+        if (map == null) return new LinkedHashMap<>();
+        if (map instanceof LinkedHashMap) {
+            // Ensure nested maps are also LinkedHashMap
+            LinkedHashMap<String, Object> linked = (LinkedHashMap<String, Object>) map;
+            for (Map.Entry<String, Object> e : new ArrayList<>(linked.entrySet())) {
+                if (e.getValue() instanceof Map) {
+                    linked.put(e.getKey(), toLinkedMap((Map<String, Object>) e.getValue()));
+                }
+            }
+            return linked;
+        }
+        LinkedHashMap<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : map.entrySet()) {
+            Object v = e.getValue();
+            if (v instanceof Map) {
+                v = toLinkedMap((Map<String, Object>) v);
+            }
+            out.put(e.getKey(), v);
+        }
+        return out;
     }
 }

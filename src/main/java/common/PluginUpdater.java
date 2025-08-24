@@ -38,6 +38,8 @@ public class PluginUpdater {
     private final PluginDownloader pluginDownloader;
     private final Logger logger;
     private final AtomicBoolean updating = new AtomicBoolean(false);
+    private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
+    private volatile ExecutorService currentExecutor;
 
     public PluginUpdater(Logger logger) {
         this.logger = logger;
@@ -54,6 +56,7 @@ public class PluginUpdater {
             return;
         }
         CompletableFuture.runAsync(() -> {
+            cancelRequested.set(false);
             if (myFile.length() == 0) {
                 logger.info("File is empty. Please put FileSaveName: [link to plugin]");
                 return;
@@ -74,13 +77,16 @@ public class PluginUpdater {
             }
             int parallel = Math.max(1, common.UpdateOptions.maxParallel);
             ExecutorService ex = createExecutor(parallel);
+            currentExecutor = ex;
             java.util.concurrent.Semaphore sem = new java.util.concurrent.Semaphore(parallel);
             List<Future<?>> futures = new ArrayList<>();
             for (Map.Entry<String, String> entry : links.entrySet()) {
                 futures.add(ex.submit(() -> {
+                    if (cancelRequested.get()) return;
                     boolean ok = false;
                     try {
                         sem.acquire();
+                        if (cancelRequested.get()) return;
                         ok = handleUpdateEntry(platform, key, entry);
                     } catch (IOException e) {
                         ok = false;
@@ -106,7 +112,7 @@ public class PluginUpdater {
                 }
             } catch (InterruptedException ignored) {}
 
-        }).whenComplete((v, t) -> updating.set(false));
+        }).whenComplete((v, t) -> { updating.set(false); cancelRequested.set(false); currentExecutor = null; });
     }
 
     /**
@@ -131,6 +137,19 @@ public class PluginUpdater {
                 ex.shutdownNow();
             }
         });
+    }
+
+    public boolean stopUpdates() {
+        if (!updating.get()) {
+            return false;
+        }
+        cancelRequested.set(true);
+        ExecutorService ex = currentExecutor;
+        if (ex != null) {
+            try { ex.shutdownNow(); } catch (Throwable ignored) {}
+        }
+        logger.info("Stop requested for ongoing update run. In-flight downloads may finish or abort shortly.");
+        return true;
     }
 
     private static Path decideInstallPath(String pluginName) {
@@ -161,7 +180,6 @@ public class PluginUpdater {
     }
 
     private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
-
         try {
             logger.info(entry.getKey() + " ---- " + entry.getValue());
             String value = entry.getValue();
