@@ -42,6 +42,8 @@ public final class BungeeUpdate extends Plugin {
         periodUpdatePlugins();
         ProxyServer.getInstance().getPluginManager().registerCommand(this, new UpdateCommand());
         ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, config));
+        applyHttpConfig();
+        applyBehaviorConfig();
     }
 
     public void periodUpdatePlugins() {
@@ -72,6 +74,93 @@ public final class BungeeUpdate extends Plugin {
             throw new RuntimeException(e);
         }
     }
+
+    @SuppressWarnings("unchecked")
+    private void applyHttpConfig() {
+        try {
+            String userAgent = config.getString("http.userAgent");
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            if (config.get("http.headers") instanceof java.util.List) {
+                java.util.List<Object> list = (java.util.List<Object>) config.get("http.headers");
+                if (list != null) {
+                    for (Object o : list) {
+                        if (o instanceof java.util.Map) {
+                            java.util.Map<?, ?> m = (java.util.Map<?, ?>) o;
+                            Object n = m.get("name");
+                            Object v = m.get("value");
+                            if (n != null && v != null) headers.put(n.toString(), v.toString());
+                        }
+                    }
+                }
+            }
+            common.PluginDownloader.setHttpHeaders(headers, userAgent);
+        } catch (Throwable ignored) {}
+
+        try {
+            String type = config.getString("proxy.type", "DIRECT");
+            String host = config.getString("proxy.host", "");
+            int port = config.getInt("proxy.port", 0);
+            if ("HTTP".equalsIgnoreCase(type)) {
+                System.setProperty("http.proxyHost", host);
+                System.setProperty("http.proxyPort", Integer.toString(port));
+                System.setProperty("https.proxyHost", host);
+                System.setProperty("https.proxyPort", Integer.toString(port));
+            } else if ("SOCKS".equalsIgnoreCase(type)) {
+                System.setProperty("socksProxyHost", host);
+                System.setProperty("socksProxyPort", Integer.toString(port));
+            } else {
+                System.clearProperty("http.proxyHost");
+                System.clearProperty("http.proxyPort");
+                System.clearProperty("https.proxyHost");
+                System.clearProperty("https.proxyPort");
+                System.clearProperty("socksProxyHost");
+                System.clearProperty("socksProxyPort");
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private void applyBehaviorConfig() {
+        try {
+            common.UpdateOptions.zipFileCheck = config.getBoolean("behavior.zipFileCheck", true);
+            common.UpdateOptions.ignoreDuplicates = config.getBoolean("behavior.ignoreDuplicates", true);
+            common.UpdateOptions.allowPreReleaseDefault = config.getBoolean("behavior.allowPreRelease", false);
+            common.UpdateOptions.autoCompileEnable = config.getBoolean("behavior.autoCompile.enable", true);
+            common.UpdateOptions.autoCompileWhenNoJarAsset = config.getBoolean("behavior.autoCompile.whenNoJarAsset", true);
+            common.UpdateOptions.autoCompileBranchNewerMonths = config.getInt("behavior.autoCompile.branchNewerMonths", 4);
+            common.UpdateOptions.debug = config.getBoolean("behavior.debug", false);
+
+            common.UpdateOptions.tempPath = emptyToNull(config.getString("paths.tempPath", ""));
+            common.UpdateOptions.updatePath = emptyToNull(config.getString("paths.updatePath", ""));
+            common.UpdateOptions.filePath = emptyToNull(config.getString("paths.filePath", ""));
+
+            common.UpdateOptions.maxParallel = Math.max(1, config.getInt("performance.maxParallel", 4));
+            common.UpdateOptions.connectTimeoutMs = Math.max(1000, config.getInt("performance.connectTimeoutMs", 10000));
+            common.UpdateOptions.readTimeoutMs = Math.max(1000, config.getInt("performance.readTimeoutMs", 30000));
+            common.UpdateOptions.perDownloadTimeoutSec = Math.max(0, config.getInt("performance.perDownloadTimeoutSec", 0));
+            common.UpdateOptions.maxRetries = Math.max(1, config.getInt("performance.maxRetries", 4));
+            common.UpdateOptions.backoffBaseMs = Math.max(0, config.getInt("performance.backoffBaseMs", 500));
+            common.UpdateOptions.backoffMaxMs = Math.max(common.UpdateOptions.backoffBaseMs, config.getInt("performance.backoffMaxMs", 5000));
+
+            java.util.List<String> uas = new java.util.ArrayList<>();
+            if (config.get("http.userAgents") instanceof java.util.List) {
+                java.util.List<Object> list = (java.util.List<Object>) config.get("http.userAgents");
+                if (list != null) {
+                    for (Object o : list) {
+                        if (o instanceof java.util.Map) {
+                            Object v = ((java.util.Map<?, ?>) o).get("ua");
+                            if (v != null) uas.add(v.toString());
+                        } else if (o != null) {
+                            uas.add(o.toString());
+                        }
+                    }
+                }
+            }
+            common.UpdateOptions.userAgents.clear();
+            common.UpdateOptions.userAgents.addAll(uas);
+        } catch (Throwable ignored) {}
+    }
+
+    private String emptyToNull(String s) { return (s == null || s.trim().isEmpty()) ? null : s; }
 
     public class UpdateCommand extends Command {
 

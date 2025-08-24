@@ -43,7 +43,7 @@ Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 ```
 
-config.yml (sane defaults):
+config.yml (Spigot/Bungee) — sane defaults:
 
 ```yaml
 updates:
@@ -77,9 +77,20 @@ paths:
   tempPath: ''       # optional
   updatePath: ''     # optional
   filePath: ''       # optional
+
+performance:
+  maxParallel: 4
+  connectTimeoutMs: 10000
+  readTimeoutMs: 30000
+  perDownloadTimeoutSec: 0
+  maxRetries: 4
+  backoffBaseMs: 500
+  backoffMaxMs: 5000
 ```
 
-All of these keys regenerate automatically with comments preserved. Change only what you need.
+Velocity uses config.toml with the same keys and behavior. See the Configuration Reference below for details.
+
+On Spigot/Paper, the config regenerates with new options and keeps your comments/values. On Bungee and Velocity, defaults are shipped in the file; update when upgrading to pick up new keys.
 
 ## Supported Sources
 
@@ -163,15 +174,38 @@ See `.github/workflows/build.yml` for details.
 
 MIT — see LICENSE for details.
 
-# For support, join our \[Discord](https://discord.gg/u3u45vaV6G).
+## Configuration Reference
 
-# 
+- updates.interval: minutes between update runs
+- updates.bootTime: seconds to delay after startup
+- updates.key: optional GitHub token for Actions and higher API limits
+- http.userAgent: override the request user agent (leave blank to auto-rotate)
+- http.headers: list of {name, value} headers added to each request
+- http.userAgents: pool of user agents; the downloader rotates on retry
+- proxy.type: DIRECT | HTTP | SOCKS
+- proxy.host / proxy.port: proxy settings for HTTP/SOCKS
+- behavior.zipFileCheck: open .jar/.zip to verify integrity after download
+- behavior.ignoreDuplicates: skip replace if MD5 matches existing
+- behavior.allowPreRelease: allow GitHub pre-releases in queries by default
+- behavior.autoCompile.enable: allow building from source for GitHub repos
+- behavior.autoCompile.whenNoJarAsset: build if release has no jar assets
+- behavior.autoCompile.branchNewerMonths: build if default branch is newer than latest (pre)release by N months
+- behavior.debug: enable verbose debug logging
+- paths.tempPath: custom temp/cache directory
+- paths.updatePath: custom update folder for staged jars
+- paths.filePath: custom final plugin jar directory
+- performance.maxParallel: max concurrent downloads (1..CPU cores recommended)
+- performance.connectTimeoutMs: HTTP connect timeout per request
+- performance.readTimeoutMs: HTTP read timeout per request
+- performance.perDownloadTimeoutSec: optional hard timeout per download (0=off)
+- performance.maxRetries: retries on transient HTTP errors (403/429/5xx)
+- performance.backoffBaseMs: base delay for exponential backoff between retries
+- performance.backoffMaxMs: maximum backoff delay in milliseconds
 
-# \## Metrics
+Platform notes:
+- Spigot/Paper/Folia: `plugins/AutoUpdatePlugins/config.yml` and `list.yml`
+- BungeeCord/Waterfall: `plugins/AutoUpdatePlugins/config.yml` and `list.yml`
+- Velocity: `plugins/autoupdateplugins/config.toml` and `list.yml`
 
-# 
-
-# \- \*\*BStats\*\*: Track usage and other metrics with BStats.
-
-# \- \*\*Compatibility\*\*: Works with Bukkit, Bungeecord, and Velocity.
+For support, join our Discord: https://discord.gg/u3u45vaV6G
 
