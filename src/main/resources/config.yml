@@ -1,21 +1,32 @@
-# Plugin Updates Configuration
+################################################################################
+# AutoUpdatePlugins — Main Configuration
+################################################################################
+
 updates:
-  # Time between period plugins updates in minutes
+  # How often to run plugin updates (minutes). Default: 120 (every 2 hours)
   interval: 120
 
-  # Delay in seconds after server startup before updating plugins
-  # Change this if plugins are causing errors by installing before they load
+  # Delay after server startup (seconds) before the first run. Default: 50
   bootTime: 50
 
-  # Note: This is optional. If you are downloading from GitHub Actions/Workflow, you will need to generate a GitHub personal access token and enter it here.
-  # How to Generate a GitHub Personal Access Token: https://www.geeksforgeeks.org/how-to-generate-personal-access-token-in-github/
-  # Make sure to include the `public_repo` permission to make it work.
+  # Optional GitHub personal access token (PAT). Strongly recommended if you use
+  # many GitHub links to avoid API rate-limits when listing releases/artifacts.
+  # Scope: public_repo is enough for public repos.
+  # Generate a token: https://github.com/settings/tokens
   key:
 
 # HTTP configuration (optional)
 http:
-  userAgent: "AutoUpdatePlugins"
+  # If blank, a rotating pool of realistic User-Agents will be used.
+  userAgent: ""
+  # Extra request headers added to every request. Only add if you know you need it.
   headers: []
+  # Optional pool of User-Agents; the plugin will rotate between them to avoid
+  # strict CDNs blocking automation.
+  userAgents:
+    - { ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36" }
+    - { ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" }
+    - { ua: "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0" }
 
 # Proxy configuration (optional)
 proxy:
@@ -25,13 +36,21 @@ proxy:
 
 # Behavior toggles
 behavior:
+  # Open downloaded .jar/.zip to ensure integrity before install (recommended)
   zipFileCheck: true
+  # Skip replacing an existing plugin if the new jar has the same MD5
   ignoreDuplicates: true
+  # Allow GitHub pre-releases by default for release queries.
   allowPreRelease: false
+  # Enable source-build fallback for GitHub repositories.
   autoCompile:
     enable: true
+    # Build when a release has no .jar asset (zip-only)
     whenNoJarAsset: true
+    # Build from source if default branch is newer than latest (pre)release by N months
     branchNewerMonths: 4
+  # Verbose debug logging. Toggle with /aup debug on|off
+  debug: false
 
 # Optional custom paths
 paths:
