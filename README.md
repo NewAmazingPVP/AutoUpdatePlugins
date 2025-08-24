@@ -13,8 +13,8 @@ Keep your server’s plugins always fresh — safely, automatically, and across 
 - Safe updates: temp download, integrity checks, checksum verification, atomic replace
 - Smart sources: GitHub (Releases & Actions), Jenkins, SpigotMC (via Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss builds v2, MineBBS, CurseForge, generic pages
 - Folia/Paper aware: async scheduler on Folia/Paper; Bukkit fallback for 1.8+
-- GitHub source build: auto-compiles from repo when needed (zip-only releases or branch significantly newer)
-- Powerful selectors: pick assets with `?get=<regex>`, allow pre-releases per link
+- GitHub source build: auto-compiles from repo when needed (zip-only releases or branch significantly newer) or on demand with `?autobuild=true`
+- Powerful selectors: pick assets with `?get=<regex>`, allow pre-releases with `?prerelease=true`, force build with `?autobuild=true`
 - Config regeneration: new options appear automatically with helpful comments
 - Customizable: headers, proxies, paths, behavior toggles
 
@@ -52,8 +52,12 @@ updates:
   key: ""           # optional GitHub token for Actions/auth
 
 http:
-  userAgent: "AutoUpdatePlugins"
+  userAgent: ""
   headers: []
+  userAgents:
+    - { ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36" }
+    - { ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" }
+    - { ua: "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0" }
 
 proxy:
   type: DIRECT       # DIRECT | HTTP | SOCKS
@@ -87,11 +91,12 @@ All of these keys regenerate automatically with comments preserved. Change only 
 - MineBBS, CurseForge (best-effort HTML parsing)
 - Generic pages with direct `.jar` links
 
-## Selecting Assets
+## Selecting Assets & Forcing Behavior
 
 - Index (GitHub/Jenkins): append `[N]` to pick the Nth jar asset
 - Regex (GitHub/Jenkins/Actions/Modrinth): append `?get=<regex>` to match by filename
 - Pre-releases (GitHub): set global `behavior.allowPreRelease: true` or per-link `?prerelease=true`
+- Force source build (GitHub): append `?autobuild=true` to a GitHub repo link
 
 Examples:
 
@@ -99,6 +104,7 @@ Examples:
 EssentialsXChat: "https://github.com/EssentialsX/Essentials?get=EssentialsXChat-([0-9.]+)\.jar&prerelease=true"
 ViaVersion: "https://ci.viaversion.com/job/ViaVersion-DEV/?get=ViaVersion-.*\.jar"
 CoreProtect: "https://modrinth.com/plugin/coreprotect/?get=CoreProtect-.*\.jar"
+UnlimitedNameTags: "https://github.com/alexdev03/UnlimitedNametags?autobuild=true"
 ```
 
 ## GitHub Source Build (auto-compile)
@@ -109,6 +115,8 @@ When enabled, the plugin will build from source if:
 - The default branch has commits newer than the latest (pre)release by `behavior.autoCompile.branchNewerMonths` months.
 
 Builds use project wrappers (`gradlew`/`mvnw`) when present, falling back to system `gradle`/`mvn`.
+
+To force a source build for a repository link, append `?autobuild=true` to the GitHub URL in `list.yml`.
 
 ## Commands
 

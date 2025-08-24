@@ -574,6 +574,25 @@ public class PluginUpdater {
             String regex = queryParam(query, "get");
             String preParam = queryParam(query, "prerelease");
             boolean allowPre = preParam != null ? Boolean.parseBoolean(preParam) : common.UpdateOptions.allowPreReleaseDefault;
+            String forceBuildParam = queryParam(query, "autobuild");
+            boolean forceBuild = forceBuildParam != null && Boolean.parseBoolean(forceBuildParam);
+
+            if (forceBuild) {
+                try {
+                    try {
+                        Path out = decideInstallPath(entry.getKey());
+                        try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                        if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                            return true;
+                        }
+                    } catch (Throwable ignored) { }
+
+                    return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                } catch (IOException e) {
+                    logger.info("Forced GitHub build failed for repo " + repoPath + ": " + e.getMessage());
+                    return false;
+                }
+            }
 
             JsonNode releases = fetchGithubJson("https://api.github.com/repos" + repoPath + "/releases", key);
 
