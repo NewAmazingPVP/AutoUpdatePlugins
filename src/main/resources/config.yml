@@ -54,7 +54,7 @@ behavior:
   allowPreRelease: false
   # Enable source-build fallback for GitHub repositories.
   autoCompile:
-    enable: true
+    enable: false
     # Build when a release has no .jar asset (zip-only)
     whenNoJarAsset: true
     # Build from source if default branch is newer than latest (pre)release by N months
@@ -86,6 +86,8 @@ performance:
   # Exponential backoff base and max delay in milliseconds between retries
   backoffBaseMs: 500
   backoffMaxMs: 5000
+  # Limit concurrent downloads per host to avoid 429s and improve stability
+  maxPerHost: 3
 
 # Plugins List Configuration
 # Edit the generated list.yml in this folder. Format:

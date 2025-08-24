@@ -6,6 +6,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.Bukkit;
 
 import java.io.File;
 import java.io.IOException;
@@ -158,14 +159,14 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(listFile, "paper", keySupplier.get());
+            pluginUpdater.readList(listFile, serverPlatform(), keySupplier.get());
             sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
             return;
         }
         for (String name : plugins) {
             PluginEntry entry = entries.get(name);
             if (entry != null) {
-                pluginUpdater.updatePlugin("paper", keySupplier.get(), name, entry.link);
+                pluginUpdater.updatePlugin(serverPlatform(), keySupplier.get(), name, entry.link);
             } else {
                 sender.sendMessage(ChatColor.RED + "Plugin " + name + " not found in list.yml");
             }
@@ -333,5 +334,17 @@ public class AupCommand implements CommandExecutor, TabCompleter {
             }
         }
         return completions;
+    }
+
+    private String serverPlatform() {
+        try {
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            return "folia";
+        } catch (Throwable ignored) {}
+        try {
+            String v = Bukkit.getVersion();
+            if (v != null && v.toLowerCase().contains("folia")) return "folia";
+        } catch (Throwable ignored) {}
+        return "paper";
     }
 }

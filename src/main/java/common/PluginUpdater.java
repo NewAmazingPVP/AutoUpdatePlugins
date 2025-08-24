@@ -157,8 +157,11 @@ public class PluginUpdater {
         Path mainJar     = pluginsDir.resolve(pluginName + ".jar");
 
         if (UpdateOptions.useUpdateFolder) {
-            Path updateJar   = pluginsDir.resolve("update").resolve(pluginName + ".jar");
-            try { Files.createDirectories(updateJar.getParent()); } catch (Exception ignored) {}
+            Path updateDir = (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty())
+                    ? Paths.get(UpdateOptions.updatePath)
+                    : pluginsDir.resolve("update");
+            try { Files.createDirectories(updateDir); } catch (Exception ignored) {}
+            Path updateJar = updateDir.resolve(pluginName + ".jar");
             return Files.exists(mainJar) ? updateJar : mainJar;
         } else {
             return mainJar;
@@ -184,44 +187,27 @@ public class PluginUpdater {
             logger.info(entry.getKey() + " ---- " + entry.getValue());
             String value = entry.getValue();
 
-            boolean blobBuildPhrase = value.contains("blob.build");
-            boolean busyBiscuitPhrase = value.contains("thebusybiscuit.github.io/builds");
-            boolean hasSpigotPhrase = value.contains("spigotmc.org");
-            boolean hasGithubPhrase = value.contains("github.com");
-            boolean hasJenkinsPhrase = value.contains("https://ci.");
-            boolean hasBukkitPhrase = value.contains("https://dev.bukkit.org/");
-            boolean hasModrinthPhrase = value.contains("modrinth.com");
-            boolean hasHangarPhrase = value.contains("https://hangar.papermc.io/");
-            boolean hasGuizhanssPhrase = value.contains("builds.guizhanss.com");
-            boolean hasMineBBSPhrase = value.contains("minebbs.com");
-            boolean hasCurseForgePhrase = value.contains("curseforge.com");
-
-            boolean hasAnyValidPhrase = hasSpigotPhrase || hasGithubPhrase || hasJenkinsPhrase || hasBukkitPhrase || hasModrinthPhrase || hasHangarPhrase || blobBuildPhrase || busyBiscuitPhrase || hasGuizhanssPhrase || hasMineBBSPhrase || hasCurseForgePhrase;
-            if (!value.endsWith("/") && hasAnyValidPhrase && !value.endsWith("]")) {
-                value = entry.getValue() + "/";
-            }
-
-            if (blobBuildPhrase) {
+            if (value.contains("blob.build")) {
                 return handleBlobBuild(value, key, entry);
-            } else if (busyBiscuitPhrase) {
+            } else if (value.contains("thebusybiscuit.github.io/builds")) {
                 return handleBusyBiscuitDownload(value, key, entry);
-            } else if (hasSpigotPhrase) {
+            } else if (value.contains("spigotmc.org")) {
                 return handleSpigotDownload(key, entry, value);
-            } else if (hasGithubPhrase) {
+            } else if (value.contains("github.com")) {
                 return handleGitHubDownload(key, entry, value);
-            } else if (hasJenkinsPhrase) {
+            } else if (value.contains("https://ci.")) {
                 return handleJenkinsDownload(key, entry, value);
-            } else if (hasBukkitPhrase) {
+            } else if (value.contains("https://dev.bukkit.org/")) {
                 return pluginDownloader.downloadPlugin(value + "files/latest", entry.getKey(), key);
-            } else if (hasModrinthPhrase) {
+            } else if (value.contains("modrinth.com")) {
                 return handleModrinthDownload(platform, key, entry, value);
-            } else if (hasHangarPhrase) {
+            } else if (value.contains("https://hangar.papermc.io/")) {
                 return handleHangarDownload(platform, key, entry, value);
-            } else if (hasGuizhanssPhrase) {
+            } else if (value.contains("builds.guizhanss.com")) {
                 return handleGuizhanssDownload(value, key, entry);
-            } else if (hasMineBBSPhrase) {
+            } else if (value.contains("minebbs.com")) {
                 return handleMineBbsDownload(value, key, entry);
-            } else if (hasCurseForgePhrase) {
+            } else if (value.contains("curseforge.com")) {
                 return handleCurseForgeDownload(value, key, entry);
             } else {
                 try {
@@ -367,8 +353,21 @@ public class PluginUpdater {
             getRegex = queryParam(value.substring(qIndexMod + 1), "get");
         }
 
+        String plat = platform == null ? "" : platform.toLowerCase(java.util.Locale.ROOT);
         Optional<JsonNode> jsonNodeOptional = StreamSupport.stream(node.spliterator(), false)
-                .filter(jsonNode -> jsonNode.get("loaders").toString().toLowerCase().contains(platform))
+                .filter(jsonNode -> {
+                    JsonNode loaders = jsonNode.get("loaders");
+                    if (loaders == null || !loaders.isArray()) return false;
+                    for (JsonNode l : loaders) {
+                        String lv = l.asText("").toLowerCase(java.util.Locale.ROOT);
+                        if (plat.equals("folia")) {
+                            if (lv.equals("folia")) return true; // require folia specifically
+                        } else {
+                            if (lv.equals(plat)) return true;
+                        }
+                    }
+                    return false;
+                })
                 .findFirst();
 
         if (!jsonNodeOptional.isPresent()) {
@@ -415,7 +414,7 @@ public class PluginUpdater {
 
     private boolean handleMineBbsDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
-            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").get();
+            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs)).get();
             Elements links = doc.select("a[href]");
             String target = null;
             for (Element a : links) {
@@ -438,7 +437,7 @@ public class PluginUpdater {
 
     private boolean handleCurseForgeDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
-            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").get();
+            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs)).get();
             Elements anchors = doc.select("a[href]");
             String filesPage = null;
             for (Element a : anchors) {
@@ -485,7 +484,7 @@ public class PluginUpdater {
                 }
             } catch (IOException ignored) {}
 
-            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").get();
+            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs)).get();
             for (Element a : doc.select("a[href]")) {
                 String href = a.attr("abs:href");
                 if (href.endsWith(".jar")) {
