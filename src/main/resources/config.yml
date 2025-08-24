@@ -9,6 +9,16 @@ updates:
   # Delay after server startup (seconds) before the first run. Default: 50
   bootTime: 50
 
+  # Schedule (experimental): Use a cron expression to control exactly when
+  # updates run. When set, this overrides both interval and bootTime.
+  # Examples:
+  #   Every day at 03:30: "30 3 * * *"
+  #   Every 15 minutes:   "*/15 * * * *"
+  #   At 5 past every hour on weekdays: "5 * * * 1-5"
+  schedule:
+    cron: ""         # Cron expression (UNIX 5-field). Leave blank to disable.
+    timezone: "UTC"  # Timezone for the cron schedule, e.g. "America/New_York"
+
   # Optional GitHub personal access token (PAT). Strongly recommended if you use
   # many GitHub links to avoid API rate-limits when listing releases/artifacts.
   # Scope: public_repo is enough for public repos.
@@ -51,6 +61,8 @@ behavior:
     branchNewerMonths: 4
   # Verbose debug logging. Toggle with /aup debug on|off
   debug: false
+
+  
 
 # Optional custom paths
 paths:

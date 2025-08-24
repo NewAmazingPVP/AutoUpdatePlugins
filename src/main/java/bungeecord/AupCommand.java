@@ -18,12 +18,14 @@ public class AupCommand extends Command implements TabExecutor {
     private final PluginUpdater pluginUpdater;
     private final File listFile;
     private final common.ConfigManager cfgMgr;
+    private final Runnable reloadAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr, Runnable reloadAction) {
         super("aup", "autoupdateplugins.manage", "autoupdateplugins");
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
+        this.reloadAction = reloadAction;
     }
 
     @Override
@@ -50,6 +52,12 @@ public class AupCommand extends Command implements TabExecutor {
                 } else {
                     sender.sendMessage(ChatColor.RED + "Usage: /aup add <identifier> <link>");
                 }
+                break;
+            case "stop":
+                stopUpdating(sender);
+                break;
+            case "reload":
+                reloadConfig(sender);
                 break;
             case "remove":
                 if (args.length >= 2) {
@@ -92,12 +100,24 @@ public class AupCommand extends Command implements TabExecutor {
         sender.sendMessage(ChatColor.AQUA + "AutoUpdatePlugins Commands:");
         sender.sendMessage(ChatColor.AQUA + "/aup download [plugin...]" + ChatColor.GRAY + " - Download specific or all plugins");
         sender.sendMessage(ChatColor.AQUA + "/aup update [plugin...]" + ChatColor.GRAY + " - Update plugins");
+        sender.sendMessage(ChatColor.AQUA + "/aup stop" + ChatColor.GRAY + " - Stop current updating process");
+        sender.sendMessage(ChatColor.AQUA + "/aup reload" + ChatColor.GRAY + " - Reload plugin configuration");
         sender.sendMessage(ChatColor.AQUA + "/aup debug <on|off|toggle|status>" + ChatColor.GRAY + " - Verbose debug logging");
         sender.sendMessage(ChatColor.AQUA + "/aup add <identifier> <link>");
         sender.sendMessage(ChatColor.AQUA + "/aup remove <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup list [page]");
         sender.sendMessage(ChatColor.AQUA + "/aup enable <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup disable <identifier>");
+    }
+
+    private void stopUpdating(CommandSender sender) {
+        boolean stopped = pluginUpdater.stopUpdates();
+        sender.sendMessage(stopped ? ChatColor.YELLOW + "Stop requested." : ChatColor.RED + "No update is currently running.");
+    }
+
+    private void reloadConfig(CommandSender sender) {
+        try { if (reloadAction != null) reloadAction.run(); } catch (Throwable ignored) {}
+        sender.sendMessage(ChatColor.GREEN + "AutoUpdatePlugins configuration reloaded.");
     }
 
     private void toggleDebug(CommandSender sender, String[] args) {

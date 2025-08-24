@@ -12,6 +12,7 @@ import common.ConfigManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import spigot.AupCommand;
 import common.UpdateOptions;
+import common.CronScheduler;
 
 import java.io.File;
 import java.io.IOException;
@@ -46,7 +47,7 @@ public final class SpigotUpdate extends JavaPlugin {
         periodUpdatePlugins();
         getCommand("update").setExecutor(new UpdateCommand());
         if (getCommand("aup") != null) {
-            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr);
+            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr, this::reloadPluginConfig);
             getCommand("aup").setExecutor(aup);
             getCommand("aup").setTabCompleter(aup);
         }
@@ -55,11 +56,37 @@ public final class SpigotUpdate extends JavaPlugin {
         applyBehaviorConfig();
     }
 
+    private void reloadPluginConfig() {
+        try { this.reloadConfig(); } catch (Throwable ignored) {}
+        this.config = getConfig();
+        this.cfgMgr = new ConfigManager(getDataFolder(), "config.yml");
+        generateOrUpdateConfig();
+        applyHttpConfig();
+        applyBehaviorConfig();
+        getLogger().info("AutoUpdatePlugins configuration reloaded.");
+    }
+
     public void periodUpdatePlugins() {
+        String cronExpression = cfgMgr.getString("updates.schedule.cron");
+        SchedulerAdapter sched = new SchedulerAdapter(this);
+        Runnable job = () -> pluginUpdater.readList(myFile, "paper", cfgMgr.getString("updates.key"));
+
+        boolean scheduled = false;
+        if (cronExpression != null && !cronExpression.isEmpty()) {
+            String tz = cfgMgr.getString("updates.schedule.timezone");
+            scheduled = CronScheduler.scheduleRecurring(cronExpression, tz, sched::runDelayedAsync, getLogger(), job);
+        }
+        if (!scheduled) {
+            scheduleIntervalUpdates();
+        }
+    }
+
+    private void scheduleIntervalUpdates() {
         int interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
         SchedulerAdapter sched = new SchedulerAdapter(this);
         sched.runRepeatingAsync(bootTime, 60L * interval, () -> pluginUpdater.readList(myFile, "paper", cfgMgr.getString("updates.key")));
+        getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
     private void applyHttpConfig() {
@@ -133,6 +160,8 @@ public final class SpigotUpdate extends JavaPlugin {
                     if (v != null) UpdateOptions.userAgents.add(v.toString());
                 }
             }
+
+            
         } catch (Throwable ignored) {}
     }
 
@@ -153,9 +182,11 @@ public final class SpigotUpdate extends JavaPlugin {
     private void generateOrUpdateConfig() {
         cfgMgr.addDefault("updates.interval", 120, "Time between plugin updates in minutes");
         cfgMgr.addDefault("updates.bootTime", 50, "Delay in seconds after server startup before updating");
+        cfgMgr.addDefault("updates.schedule.cron", "", "Experimental: A cron expression to schedule updates. Overrides interval and bootTime if set.");
+        cfgMgr.addDefault("updates.schedule.timezone", "UTC", "The timezone for the cron schedule.");
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
-        cfgMgr.addDefault("http.userAgent", "", "HTTP User-Agent override (leave blank to auto-rotate)");
+        cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
         cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
         java.util.ArrayList<Map<String, String>> uas = new java.util.ArrayList<>();
         java.util.HashMap<String, String> ua1 = new java.util.HashMap<>(); ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
@@ -165,8 +196,8 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("http.userAgents", uas, "Optional pool of User-Agents; rotates on retry");
 
         cfgMgr.addDefault("proxy.type", "DIRECT", "Proxy type: DIRECT | HTTP | SOCKS");
-        cfgMgr.addDefault("proxy.host", "127.0.0.1", "Proxy host");
-        cfgMgr.addDefault("proxy.port", 7890, "Proxy port");
+        cfgMgr.addDefault("proxy.host", "proxy.example.com", "Proxy host");
+        cfgMgr.addDefault("proxy.port", 8080, "Proxy port");
 
         cfgMgr.addDefault("behavior.zipFileCheck", true, "Open .jar/.zip to verify integrity");
         cfgMgr.addDefault("behavior.ignoreDuplicates", true, "Skip replace when MD5 is identical");
@@ -192,6 +223,3 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.saveConfig();
     }
 }
-
-
-

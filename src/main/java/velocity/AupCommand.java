@@ -17,11 +17,13 @@ public class AupCommand implements SimpleCommand {
     private final PluginUpdater pluginUpdater;
     private final File listFile;
     private final common.ConfigManager cfgMgr;
+    private final Runnable reloadAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr, Runnable reloadAction) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
+        this.reloadAction = reloadAction;
     }
 
     @Override
@@ -51,6 +53,12 @@ public class AupCommand implements SimpleCommand {
                 } else {
                     source.sendMessage(Component.text("Usage: /aup add <identifier> <link>").color(NamedTextColor.RED));
                 }
+                break;
+            case "stop":
+                stopUpdating(source);
+                break;
+            case "reload":
+                reloadConfig(source);
                 break;
             case "remove":
                 if (args.length >= 2) {
@@ -93,12 +101,24 @@ public class AupCommand implements SimpleCommand {
         source.sendMessage(Component.text("AutoUpdatePlugins Commands:").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup download [plugin...]").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup update [plugin...]").color(NamedTextColor.AQUA));
+        source.sendMessage(Component.text("/aup stop").color(NamedTextColor.AQUA));
+        source.sendMessage(Component.text("/aup reload").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup debug <on|off|toggle|status>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup add <identifier> <link>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup remove <identifier>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup list [page]").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup enable <identifier>").color(NamedTextColor.AQUA));
         source.sendMessage(Component.text("/aup disable <identifier>").color(NamedTextColor.AQUA));
+    }
+
+    private void stopUpdating(CommandSource source) {
+        boolean stopped = pluginUpdater.stopUpdates();
+        source.sendMessage(Component.text(stopped ? "Stop requested." : "No update is currently running.").color(stopped ? NamedTextColor.YELLOW : NamedTextColor.RED));
+    }
+
+    private void reloadConfig(CommandSource source) {
+        try { if (reloadAction != null) reloadAction.run(); } catch (Throwable ignored) {}
+        source.sendMessage(Component.text("AutoUpdatePlugins configuration reloaded.").color(NamedTextColor.GREEN));
     }
 
     private void toggleDebug(CommandSource sender, String[] args) {
@@ -266,7 +286,7 @@ public class AupCommand implements SimpleCommand {
             return completions;
         }
         String[] args = invocation.arguments();
-        String[] subs = {"download", "update", "add", "remove", "list", "enable", "disable"};
+        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable"};
         if (args.length == 0) {
             completions.addAll(Arrays.asList(subs));
         } else if (args.length == 1) {
@@ -304,4 +324,3 @@ public class AupCommand implements SimpleCommand {
         }
     }
 }
-

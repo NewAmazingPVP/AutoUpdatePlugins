@@ -1,22 +1,20 @@
 <div align="center">
 
-# AutoUpdatePlugins
+# AutoUpdatePlugins v12.0.0
 
-Keep your server’s plugins always fresh — safely, automatically, and across every ecosystem.
+Keep your server’s plugins up-to-date — automatically, safely, and across platforms.
 
-[Spigot](https://www.spigotmc.org/resources/autoupdateplugins.109683/) · Paper/Folia · Velocity · Bungeecord · 1.8 → Latest
+[Spigot](https://www.spigotmc.org/resources/autoupdateplugins.109683/) · Paper/Folia · Velocity · BungeeCord · 1.8 → Latest
 
 </div>
 
 ## Highlights
 
-- Safe updates: temp download, integrity checks, checksum verification, atomic replace
-- Smart sources: GitHub (Releases & Actions), Jenkins, SpigotMC (via Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss builds v2, MineBBS, CurseForge, generic pages
-- Folia/Paper aware: async scheduler on Folia/Paper; Bukkit fallback for 1.8+
-- GitHub source build: auto-compiles from repo when needed (zip-only releases or branch significantly newer) or on demand with `?autobuild=true`
-- Powerful selectors: pick assets with `?get=<regex>`, allow pre-releases with `?prerelease=true`, force build with `?autobuild=true`
-- Config regeneration: new options appear automatically with helpful comments
-- Customizable: headers, proxies, paths, behavior toggles
+- Multiple sources: GitHub (Releases & Actions), Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, generic pages
+- Smart selection: `?get=<regex>`, pick by index `[N]`, `?prerelease=true`, force source build `?autobuild=true`
+- Regenerating config: new options appear automatically and keep your comments
+- Async + fast: Folia/Paper aware, parallel downloads, retry/backoff
+- Scheduling: interval-based or cron (experimental) with timezone
 
 ## Requirements
 
@@ -31,7 +29,7 @@ Keep your server’s plugins always fresh — safely, automatically, and across 
 
 3) Restart or run `/update` or `/aup update` to trigger updates.
 
-The plugin will update your plugins at the configured interval (Folia/Paper async or Bukkit async).
+The plugin runs at the configured schedule (interval or cron). Updates are applied on restart if your platform uses an `update/` folder.
 
 ## Quick Start
 
@@ -43,13 +41,20 @@ Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 ```
 
-config.yml (Spigot/Bungee) — sane defaults:
+Default config (excerpt):
 
 ```yaml
 updates:
-  interval: 120      # minutes
-  bootTime: 50       # seconds
-  key: ""           # optional GitHub token for Actions/auth
+  interval: 120      # minutes between update runs
+  bootTime: 50       # seconds to delay after startup
+
+  # Schedule (experimental): overrides interval + bootTime when set
+  schedule:
+    cron: ""         # Cron expression (UNIX 5-field). Leave blank to disable.
+    timezone: "UTC"  # Timezone for cron, e.g. "America/New_York"
+
+  # Optional GitHub token (PAT) to access Actions artifacts and avoid rate limits
+  key:
 
 http:
   userAgent: ""
@@ -72,6 +77,7 @@ behavior:
     enable: true
     whenNoJarAsset: true
     branchNewerMonths: 4
+  debug: false
 
 paths:
   tempPath: ''       # optional
@@ -88,9 +94,7 @@ performance:
   backoffMaxMs: 5000
 ```
 
-Velocity uses config.toml with the same keys and behavior. See the Configuration Reference below for details.
-
-On Spigot/Paper, the config regenerates with new options and keeps your comments/values. On Bungee and Velocity, defaults are shipped in the file; update when upgrading to pick up new keys.
+Velocity, Spigot/Paper, and Bungee/Waterfall all use `config.yml` and `list.yml`. Config regeneration preserves your comments and values.
 
 ## Supported Sources
 
@@ -134,6 +138,8 @@ To force a source build for a repository link, append `?autobuild=true` to the G
 - `/update` — trigger an update run
 - `/aup download [names...]` — update all or specific plugins
 - `/aup update [names...]` — alias of download
+- `/aup stop` — request stop of the current updating process
+- `/aup reload` — reload the plugin configuration (all platforms)
 - `/aup add <name> <link>` — append to list.yml
 - `/aup remove <name>` — remove from list.yml
 - `/aup list [page]` — view configured plugins
@@ -144,68 +150,38 @@ Permissions:
 - `autoupdateplugins.update` — use `/update`
 - `autoupdateplugins.manage` — use `/aup ...`
 
-## Safety & Integrity
+## How it Updates
 
-- Downloads into `.download.tmp`, stages jar to `.temp`, validates, then atomically replaces
-- Validates `Content-Length`, zip readability, jar readability
-- Verifies checksums via headers (`X-Checksum-*`, or hex `ETag`)
-- Skips replacing when MD5 matches the current file (configurable)
+- Downloads to a temp file, validates, then replaces atomically
+- Retries on transient errors with exponential backoff
+- Skips replacing if the new file matches the existing (configurable)
+
 
 ## Tips
 
 - Provide a GitHub token in `updates.key` to access Actions artifacts and higher rate limits
 - Use `http.headers` to add vendor-specific headers if a source needs them
-- Configure `proxy` if your network requires it
+- Configure `proxy` if your network requires it (default host is `proxy.example.com`, port `8080`)
 
-## Build From Source (local)
+## Build From Source
 
 ```bash
 mvn -DskipTests package
-# Jar will be under target/*.jar
 ```
-
-## CI: GitHub Actions
-
-On every push and PR, the project is built and the fat jar is uploaded as a workflow artifact. On tagging a commit (e.g. `v1.2.3`), a GitHub Release is created and the jar is attached.
-
-See `.github/workflows/build.yml` for details.
 
 ## License
 
 MIT — see LICENSE for details.
 
-## Configuration Reference
+## Configuration Reference (concise)
 
-- updates.interval: minutes between update runs
-- updates.bootTime: seconds to delay after startup
-- updates.key: optional GitHub token for Actions and higher API limits
-- http.userAgent: override the request user agent (leave blank to auto-rotate)
-- http.headers: list of {name, value} headers added to each request
-- http.userAgents: pool of user agents; the downloader rotates on retry
-- proxy.type: DIRECT | HTTP | SOCKS
-- proxy.host / proxy.port: proxy settings for HTTP/SOCKS
-- behavior.zipFileCheck: open .jar/.zip to verify integrity after download
-- behavior.ignoreDuplicates: skip replace if MD5 matches existing
-- behavior.allowPreRelease: allow GitHub pre-releases in queries by default
-- behavior.autoCompile.enable: allow building from source for GitHub repos
-- behavior.autoCompile.whenNoJarAsset: build if release has no jar assets
-- behavior.autoCompile.branchNewerMonths: build if default branch is newer than latest (pre)release by N months
-- behavior.debug: enable verbose debug logging
-- paths.tempPath: custom temp/cache directory
-- paths.updatePath: custom update folder for staged jars
-- paths.filePath: custom final plugin jar directory
-- performance.maxParallel: max concurrent downloads (1..CPU cores recommended)
-- performance.connectTimeoutMs: HTTP connect timeout per request
-- performance.readTimeoutMs: HTTP read timeout per request
-- performance.perDownloadTimeoutSec: optional hard timeout per download (0=off)
-- performance.maxRetries: retries on transient HTTP errors (403/429/5xx)
-- performance.backoffBaseMs: base delay for exponential backoff between retries
-- performance.backoffMaxMs: maximum backoff delay in milliseconds
-
-Platform notes:
-- Spigot/Paper/Folia: `plugins/AutoUpdatePlugins/config.yml` and `list.yml`
-- BungeeCord/Waterfall: `plugins/AutoUpdatePlugins/config.yml` and `list.yml`
-- Velocity: `plugins/autoupdateplugins/config.toml` and `list.yml`
+- updates.interval / updates.bootTime: interval schedule (overridden by cron)
+- updates.schedule.cron / timezone: cron expression and timezone
+- updates.key: GitHub token for Actions and higher rate limits (optional)
+- http.*: userAgent override, extra headers, and rotating userAgents list
+- proxy.*: DIRECT | HTTP | SOCKS and host/port
+- behavior.*: integrity checks, duplicate-skip, pre-releases, auto-compile, debug
+- paths.*: optional custom directories
+- performance.*: parallelism, timeouts, retries, and backoff
 
 For support, join our Discord: https://discord.gg/u3u45vaV6G
-

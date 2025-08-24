@@ -25,13 +25,15 @@ public class AupCommand implements CommandExecutor, TabCompleter {
     private final FileConfiguration config;
     private final Supplier<String> keySupplier;
     private final ConfigManager cfgMgr;
+    private final Runnable reloadAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier, ConfigManager cfgMgr) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier, ConfigManager cfgMgr, Runnable reloadAction) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.config = config;
         this.keySupplier = keySupplier;
         this.cfgMgr = cfgMgr;
+        this.reloadAction = reloadAction;
     }
 
     @Override
@@ -61,6 +63,12 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 } else {
                     sender.sendMessage(ChatColor.RED + "Usage: /aup add <identifier> <link>");
                 }
+                break;
+            case "stop":
+                stopUpdating(sender);
+                break;
+            case "reload":
+                reloadConfig(sender);
                 break;
             case "remove":
                 if (args.length >= 2) {
@@ -101,12 +109,25 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(ChatColor.AQUA + "AutoUpdatePlugins Commands:");
         sender.sendMessage(ChatColor.AQUA + "/aup download [plugin...]" + ChatColor.GRAY + " - Download specific or all plugins");
         sender.sendMessage(ChatColor.AQUA + "/aup update [plugin...]" + ChatColor.GRAY + " - Update plugins (same as /update)");
+        sender.sendMessage(ChatColor.AQUA + "/aup stop" + ChatColor.GRAY + " - Stop current updating process");
+        sender.sendMessage(ChatColor.AQUA + "/aup reload" + ChatColor.GRAY + " - Reload plugin configuration");
         sender.sendMessage(ChatColor.AQUA + "/aup debug <on|off|toggle|status>" + ChatColor.GRAY + " - Verbose debug logging");
         sender.sendMessage(ChatColor.AQUA + "/aup add <identifier> <link>");
         sender.sendMessage(ChatColor.AQUA + "/aup remove <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup list [page]");
         sender.sendMessage(ChatColor.AQUA + "/aup enable <identifier>");
         sender.sendMessage(ChatColor.AQUA + "/aup disable <identifier>");
+    }
+
+    private void stopUpdating(CommandSender sender) {
+        boolean stopped = pluginUpdater.stopUpdates();
+        if (stopped) sender.sendMessage(ChatColor.YELLOW + "Stop requested. In-flight downloads may complete.");
+        else sender.sendMessage(ChatColor.RED + "No update is currently running.");
+    }
+
+    private void reloadConfig(CommandSender sender) {
+        try { if (reloadAction != null) reloadAction.run(); } catch (Throwable ignored) {}
+        sender.sendMessage(ChatColor.GREEN + "AutoUpdatePlugins configuration reloaded.");
     }
 
     private void toggleDebug(CommandSender sender, String[] args) {
@@ -288,7 +309,7 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("autoupdateplugins.manage")) {
             return completions;
         }
-        String[] subs = {"download", "update", "add", "remove", "list", "enable", "disable"};
+        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable"};
         if (args.length == 1) {
             String current = args[0].toLowerCase();
             for (String s : subs) {
