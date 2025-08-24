@@ -19,6 +19,7 @@ public class UpdateOptions {
     public static int backoffBaseMs = 500;
     public static int backoffMaxMs = 5000;
     public static java.util.List<String> userAgents = new java.util.ArrayList<>();
+    public static boolean useUpdateFolder = true;
 
     private UpdateOptions() {}
 }
