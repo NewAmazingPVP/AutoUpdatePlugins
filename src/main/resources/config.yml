@@ -42,12 +42,13 @@ http:
 
 # Proxy configuration (optional)
 proxy:
-  type: DIRECT # DIRECT | HTTP | SOCKS
-  host: "127.0.0.1"
-  port: 7890
+  type: "HTTP" # HTTP | SOCKS | (anything else = disabled)
+  host: "proxy.example"
+  port: 8080
 
 # Behavior toggles
 behavior:
+  useUpdateFolder: true
   # Open downloaded .jar/.zip to ensure integrity before install (recommended)
   zipFileCheck: true
   # Skip replacing an existing plugin if the new jar has the same MD5
@@ -58,9 +59,9 @@ behavior:
   autoCompile:
     enable: false
     # Build when a release has no .jar asset (zip-only)
-    whenNoJarAsset: true
+    whenNoJarAsset: false
     # Build from source if default branch is newer than latest (pre)release by N months
-    branchNewerMonths: 4
+    branchNewerMonths: 6
   # Verbose debug logging. Toggle with /aup debug on|off
   debug: false
 
@@ -84,7 +85,7 @@ performance:
   # Optional per-download hard timeout in seconds. 0 disables the cap.
   perDownloadTimeoutSec: 0
   # Retry behavior for transient HTTP errors (403/429/5xx)
-  maxRetries: 4
+  maxRetries: 3
   # Exponential backoff base and max delay in milliseconds between retries
   backoffBaseMs: 500
   backoffMaxMs: 5000

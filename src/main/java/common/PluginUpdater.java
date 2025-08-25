@@ -382,6 +382,8 @@ public class PluginUpdater {
                         if (p.contains("paper")) { if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
                         else if (p.contains("spigot") || p.contains("bukkit")) { if (lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
                         else if (p.contains("folia")) { if (lv.contains("folia")) { loaderOk = true; break; } }
+                        else if (p.contains("velocity")) { if (lv.contains("velocity") || lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
+                        else if (p.contains("bungee")) { if (lv.contains("bungeecord") || lv.contains("bungee") || lv.contains("velocity")) { loaderOk = true; break; } }
                         else { loaderOk = true; break; }
                     }
                 }
