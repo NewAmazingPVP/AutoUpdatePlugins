@@ -701,6 +701,8 @@ public class PluginUpdater {
             return handleGitHubDevDownload(key, entry, value);
         }
 
+        String repoPath = null;
+        boolean forceBuild = false;
         try {
             String query = null;
             int qIdx = value.indexOf('?');
@@ -708,6 +710,8 @@ public class PluginUpdater {
                 query = value.substring(qIdx + 1);
                 value = value.substring(0, qIdx);
             }
+
+            forceBuild = Boolean.parseBoolean(queryParam(query, "autobuild"));
 
             int artifactNum = 1;
             int lb = value.indexOf('['), rb = value.indexOf(']', lb + 1);
@@ -722,49 +726,18 @@ public class PluginUpdater {
                 if (artifactNum < 1) artifactNum = 1;
             }
 
-            String repoPath = getGitHubRepoLocation(repoUrl);
+            repoPath = getGitHubRepoLocation(repoUrl);
             if (repoPath == null || repoPath.isEmpty()) {
                 logger.info("Repository path not found for: " + value);
-                try {
-                    Path out = decideInstallPath(entry.getKey());
-                    try {
-                        Files.createDirectories(out.getParent());
-                    } catch (Exception ignored) {
-                    }
-                    if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                        return true;
-                    }
-                } catch (Throwable ignored) {
-                }
-                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
-
+                return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
             }
 
             String regex = queryParam(query, "get");
             String preParam = queryParam(query, "prerelease");
             boolean allowPre = preParam != null ? Boolean.parseBoolean(preParam) : UpdateOptions.allowPreReleaseDefault;
-            String forceBuildParam = queryParam(query, "autobuild");
-            boolean forceBuild = Boolean.parseBoolean(forceBuildParam);
 
             if (forceBuild) {
-                try {
-                    try {
-                        Path out = decideInstallPath(entry.getKey());
-                        try {
-                            Files.createDirectories(out.getParent());
-                        } catch (Exception ignored) {
-                        }
-                        if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                            return true;
-                        }
-                    } catch (Throwable ignored) {
-                    }
-
-                    return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
-                } catch (IOException e) {
-                    logger.info("Forced GitHub build failed for repo " + repoPath + ": " + e.getMessage());
-                    return false;
-                }
+                return attemptSourceBuild(repoPath, entry, value, key, false, true);
             }
 
             JsonNode releases = fetchGithubJson("https://api.github.com/repos" + repoPath + "/releases", key);
@@ -823,20 +796,13 @@ public class PluginUpdater {
 
             if (downloadUrl == null || downloadUrl.isEmpty()) {
                 if (UpdateOptions.debug) {
-                    logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — attempting source build.");
-                }
-                try {
-                    Path out = decideInstallPath(entry.getKey());
-                    try {
-                        Files.createDirectories(out.getParent());
-                    } catch (Exception ignored) {
+                    if (UpdateOptions.autoCompileEnable && UpdateOptions.autoCompileWhenNoJarAsset) {
+                        logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — attempting source build.");
+                    } else {
+                        logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — source build disabled.");
                     }
-                    if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                        return true;
-                    }
-                } catch (Throwable ignored) {
                 }
-                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                return attemptSourceBuild(repoPath, entry, value, key, true, forceBuild);
 
             }
 
@@ -844,63 +810,40 @@ public class PluginUpdater {
                 boolean ok = pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
                 if (!ok) {
                     if (UpdateOptions.debug) {
-                        logger.info("[DEBUG] GitHub asset download failed, falling back to source build for " + repoPath);
-                    }
-                    try {
-                        Path out = decideInstallPath(entry.getKey());
-                        try {
-                            Files.createDirectories(out.getParent());
-                        } catch (Exception ignored) {
+                        if (UpdateOptions.autoCompileEnable) {
+                            logger.info("[DEBUG] GitHub asset download failed, falling back to source build for " + repoPath);
+                        } else {
+                            logger.info("[DEBUG] GitHub asset download failed for " + repoPath + " — auto-compile disabled.");
                         }
-                        if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                            return true;
-                        }
-                    } catch (Throwable ignored) {
                     }
-                    return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                    return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
 
                 }
                 return true;
             } catch (Throwable t) {
                 if (UpdateOptions.debug) {
-                    logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
-                            + " — falling back to source build for " + repoPath);
-                }
-                try {
-                    Path out = decideInstallPath(entry.getKey());
-                    try {
-                        Files.createDirectories(out.getParent());
-                    } catch (Exception ignored) {
+                    if (UpdateOptions.autoCompileEnable) {
+                        logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
+                                + " — falling back to source build for " + repoPath);
+                    } else {
+                        logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
+                                + " for " + repoPath + " — auto-compile disabled.");
                     }
-                    if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                        return true;
-                    }
-                } catch (Throwable ignored) {
                 }
-
-                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
 
             }
         } catch (Throwable t) {
             if (UpdateOptions.debug) {
-                logger.info("[DEBUG] handleGitHubDownload failed for " + value + " : " + t.getMessage()
-                        + " — building from source as fallback.");
-            }
-            try {
-                Path out = decideInstallPath(entry.getKey());
-                try {
-                    Files.createDirectories(out.getParent());
-                } catch (Exception ignored) {
+                if (UpdateOptions.autoCompileEnable) {
+                    logger.info("[DEBUG] handleGitHubDownload failed for " + value + " : " + t.getMessage()
+                            + " — building from source as fallback.");
+                } else {
+                    logger.info("[DEBUG] handleGitHubDownload failed for " + value + " : " + t.getMessage()
+                            + " — auto-compile disabled.");
                 }
-                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                    return true;
-                }
-                String repoPath = getGitHubRepoLocation(value);
-                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
-            } catch (Exception e) {
-                logger.info("Failed to build plugin from GitHub repo (final fallback): " + e.getMessage());
-                return false;
             }
+            return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
 
         }
     }
@@ -1071,6 +1014,34 @@ public class PluginUpdater {
         if (earlierMillis <= 0 || laterMillis <= 0 || laterMillis < earlierMillis) return 0L;
         long days = (laterMillis - earlierMillis) / (1000L * 60L * 60L * 24L);
         return days / 30L;
+    }
+
+    private boolean attemptSourceBuild(String repoPath, Map.Entry<String, String> entry, String url, String key,
+                                       boolean noJarAsset, boolean forceBuild) {
+        if (!forceBuild) {
+            if (!UpdateOptions.autoCompileEnable) return false;
+            if (noJarAsset && !UpdateOptions.autoCompileWhenNoJarAsset) return false;
+        }
+        try {
+            Path out = decideInstallPath(entry.getKey());
+            try {
+                Files.createDirectories(out.getParent());
+            } catch (Exception ignored) {
+            }
+            if (GitHubBuild.handleGitHubBuild(logger, url, out, key)) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        if (repoPath == null || repoPath.isEmpty()) return false;
+        try {
+            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+        } catch (IOException e) {
+            if (UpdateOptions.debug) {
+                logger.info("[DEBUG] Source build failed for " + repoPath + ": " + e.getMessage());
+            }
+            return false;
+        }
     }
 
     private String queryParam(String query, String key) {

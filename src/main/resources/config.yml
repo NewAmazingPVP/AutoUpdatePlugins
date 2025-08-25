@@ -59,7 +59,7 @@ behavior:
   autoCompile:
     enable: false
     # Build when a release has no .jar asset (zip-only)
-    whenNoJarAsset: false
+    whenNoJarAsset: true
     # Build from source if default branch is newer than latest (pre)release by N months
     branchNewerMonths: 6
   # Verbose debug logging. Toggle with /aup debug on|off

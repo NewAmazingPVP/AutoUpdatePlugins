@@ -33,7 +33,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
-@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.1.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
+@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.1.1", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
     private PluginUpdater pluginUpdater;
@@ -69,7 +69,7 @@ public final class VelocityUpdate {
                             try {
                                 Path target = dataDirectory.getParent().resolve(jar.getFileName());
                                 Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
-                                System.out.println("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
+                                  logger.info("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
@@ -263,9 +263,9 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("behavior.ignoreDuplicates", true, "Skip replace when MD5 is identical");
         cfgMgr.addDefault("behavior.allowPreRelease", false, "Allow GitHub pre-releases by default");
         cfgMgr.addDefault("behavior.debug", false, "Enable verbose debug logging (toggle via /aup debug)");
-        cfgMgr.addDefault("behavior.autoCompile.enable", true, "Enable source build fallback for GitHub");
+        cfgMgr.addDefault("behavior.autoCompile.enable", false, "Enable source build fallback for GitHub");
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
-        cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 4, "Build when default branch is newer by N months");
+        cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
 
 
