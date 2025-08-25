@@ -31,6 +31,8 @@ http:
   userAgent: ""
   # Extra request headers added to every request. Only add if you know you need it.
   headers: []
+  # Verify TLS certificates (set to false to trust all; only if you must)
+  sslVerify: true
   # Optional pool of User-Agents; the plugin will rotate between them to avoid
   # strict CDNs blocking automation.
   userAgents:

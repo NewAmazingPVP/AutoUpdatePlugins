@@ -7,6 +7,7 @@ public class UpdateOptions {
     public static boolean autoCompileWhenNoJarAsset = true;
     public static int autoCompileBranchNewerMonths = 4;
     public static boolean allowPreReleaseDefault = false;
+    public static boolean sslVerify = true;
     public static String tempPath = null;
     public static String updatePath = null;
     public static String filePath = null;

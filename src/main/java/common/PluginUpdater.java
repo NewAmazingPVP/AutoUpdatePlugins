@@ -198,7 +198,7 @@ public class PluginUpdater {
             } else if (value.contains("https://ci.")) {
                 return handleJenkinsDownload(key, entry, value);
             } else if (value.contains("https://dev.bukkit.org/")) {
-                return pluginDownloader.downloadPlugin(value + "files/latest", entry.getKey(), key);
+                return pluginDownloader.downloadPlugin(value + "/files/latest", entry.getKey(), key);
             } else if (value.contains("modrinth.com")) {
                 return handleModrinthDownload(platform, key, entry, value);
             } else if (value.contains("https://hangar.papermc.io/")) {
@@ -219,6 +219,37 @@ public class PluginUpdater {
             return false;
         }
     }
+
+    private org.jsoup.Connection jsoup(String url) {
+        org.jsoup.Connection c = org.jsoup.Jsoup.connect(url)
+                .userAgent(common.PluginDownloader.getEffectiveUserAgent())
+                .timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs))
+                .followRedirects(true);
+
+        // apply extra headers
+        for (java.util.Map.Entry<String,String> e : common.PluginDownloader.getExtraHeaders().entrySet()) {
+            c.header(e.getKey(), e.getValue());
+        }
+
+        // Optional: per-request trust-all when sslVerify=false (works on modern jsoup)
+        if (!common.UpdateOptions.sslVerify) {
+            try {
+                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
+                        new javax.net.ssl.X509TrustManager() {
+                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
+                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
+                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                        }
+                };
+                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new java.security.SecureRandom());
+                c.sslSocketFactory(sc.getSocketFactory());
+            } catch (Throwable ignored) {}
+        }
+
+        return c;
+    }
+
 
     private boolean handleBlobBuild(String value, String key, Map.Entry<String, String> entry) {
         try {
@@ -320,80 +351,64 @@ public class PluginUpdater {
         return response.toString().trim();
     }
 
+    // File: src/main/java/common/PluginUpdater.java
     private boolean handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
-
-        String[] parts = value.split("/");
-        String projectName = parts[parts.length - 1];
-        String apiUrl = "https://api.modrinth.com/v2/search?query=" + projectName;
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode rootNode;
         try {
-            rootNode = objectMapper.readTree(new URL(apiUrl));
-        } catch (Exception e) {
-            logger.info("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
-            return false;
-        }
+            String[] parts = value.split("/");
+            String last = parts[parts.length - 1];
+            int qi = last.indexOf('?');
+            if (qi != -1) last = last.substring(0, qi);
+            String projectSlug = last;
 
-        ArrayNode hits = (ArrayNode) rootNode.get("hits");
-        JsonNode firstHit = hits.get(0);
-        String projectId = firstHit.get("project_id").asText();
-        String versionUrl = "https://api.modrinth.com/v2/project/" + projectId + "/version";
+            // optional filename regex
+            String getRegex = null;
+            int qIndex = value.indexOf('?');
+            if (qIndex != -1) getRegex = queryParam(value.substring(qIndex + 1), "get");
 
-        ArrayNode node;
-        try {
-            node = (ArrayNode) objectMapper.readTree(new URL(versionUrl));
-        } catch (Exception e) {
-            logger.info("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
-            return false;
-        }
+            String api = "https://api.modrinth.com/v2/project/" + projectSlug + "/version";
+            com.fasterxml.jackson.databind.JsonNode versions = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(new java.net.URL(api));
 
-        String getRegex = null;
-        int qIndexMod = value.indexOf('?');
-        if (qIndexMod != -1) {
-            getRegex = queryParam(value.substring(qIndexMod + 1), "get");
-        }
+            for (com.fasterxml.jackson.databind.JsonNode version : versions) {
+                com.fasterxml.jackson.databind.JsonNode files = version.get("files");
+                if (files == null || !files.isArray()) continue;
 
-        String plat = platform == null ? "" : platform.toLowerCase(java.util.Locale.ROOT);
-        Optional<JsonNode> jsonNodeOptional = StreamSupport.stream(node.spliterator(), false)
-                .filter(jsonNode -> {
-                    JsonNode loaders = jsonNode.get("loaders");
-                    if (loaders == null || !loaders.isArray()) return false;
-                    for (JsonNode l : loaders) {
-                        String lv = l.asText("").toLowerCase(java.util.Locale.ROOT);
-                        if (plat.equals("folia")) {
-                            if (lv.equals("folia")) return true; // require folia specifically
-                        } else {
-                            if (lv.equals(plat)) return true;
-                        }
+                boolean loaderOk = true; // default allow if no loader filter
+                if (version.has("loaders") && version.get("loaders").isArray() && platform != null && !platform.isEmpty()) {
+                    loaderOk = false;
+                    String p = platform.toLowerCase();
+                    for (com.fasterxml.jackson.databind.JsonNode l : version.get("loaders")) {
+                        String lv = l.asText("").toLowerCase();
+                        if (p.contains("paper")) { if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
+                        else if (p.contains("spigot") || p.contains("bukkit")) { if (lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
+                        else if (p.contains("folia")) { if (lv.contains("folia")) { loaderOk = true; break; } }
+                        else { loaderOk = true; break; }
                     }
-                    return false;
-                })
-                .findFirst();
+                }
+                if (!loaderOk) continue;
 
-        if (!jsonNodeOptional.isPresent()) {
-            return false;
-        }
+                com.fasterxml.jackson.databind.JsonNode picked = null;
+                if (getRegex != null && !getRegex.isEmpty()) {
+                    for (com.fasterxml.jackson.databind.JsonNode f : files) {
+                        String fname = f.has("filename") ? f.get("filename").asText("") : "";
+                        try { if (fname.matches(getRegex)) { picked = f; break; } } catch (Throwable ignored) {}
+                    }
+                }
+                if (picked == null && files.size() > 0) picked = files.get(0);
 
-        JsonNode filesArray = jsonNodeOptional.get().get("files");
-        String downloadUrl = null;
-        if (getRegex != null) {
-            for (JsonNode f : filesArray) {
-                if (f.has("filename") && f.get("filename").asText().matches(getRegex)) {
-                    downloadUrl = f.get("url").asText();
-                    break;
+                if (picked != null && picked.has("url")) {
+                    return pluginDownloader.downloadPlugin(picked.get("url").asText(), entry.getKey(), key);
                 }
             }
-        }
-        if (downloadUrl == null) {
-            downloadUrl = filesArray.get(0).get("url").asText();
-        }
-        try {
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
-        } catch (IOException e) {
-            logger.info("Failed to download plugin from modrinth, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
+            logger.info("Failed to pick Modrinth file for " + value);
+            return false;
+        } catch (Exception e) {
+            logger.info("Failed to download plugin from modrinth: " + e.getMessage());
             return false;
         }
     }
+
+
 
     private boolean handleGuizhanssDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
@@ -414,66 +429,118 @@ public class PluginUpdater {
 
     private boolean handleMineBbsDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
-            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs)).get();
-            Elements links = doc.select("a[href]");
-            String target = null;
-            for (Element a : links) {
+            if (value.contains("minebbs.com")) {
+                String base = value.replaceAll("/+$", "");
+                String dUrl = base + "/download";
+                return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
+            }
+
+            org.jsoup.nodes.Document doc = jsoup(value).get();
+            for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
                 String href = a.attr("abs:href");
-                if (href.endsWith(".jar") || href.contains("github.com") || href.contains("modrinth.com") || href.contains("spigotmc.org") || href.contains("hangar.papermc.io") || href.contains("download")) {
-                    target = href;
-                    break;
+                if (href.endsWith(".jar") || href.contains("/download") || href.contains("hangar.papermc.io") || href.contains("github.com")) {
+                    if (href.endsWith(".jar")) {
+                        return pluginDownloader.downloadPlugin(href, entry.getKey(), key);
+                    }
+                    return handleUpdateEntry("paper", key, new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), href));
                 }
             }
-            if (target == null) return false;
-            if (target.endsWith(".jar")) {
-                return pluginDownloader.downloadPlugin(target, entry.getKey(), key);
-            }
-            return handleUpdateEntry("paper", key, new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), target));
+            return false;
         } catch (Exception e) {
             logger.info("Failed to parse MineBBS page: " + e.getMessage());
             return false;
         }
     }
 
+
     private boolean handleCurseForgeDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
-            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs)).get();
-            Elements anchors = doc.select("a[href]");
-            String filesPage = null;
-            for (Element a : anchors) {
-                String href = a.attr("abs:href");
-                if (href.contains("/files")) { filesPage = href; break; }
-            }
-            String downloadUrl = null;
-            if (filesPage != null) {
-                Document files = Jsoup.connect(filesPage).userAgent("AutoUpdatePlugins").get();
-                for (Element a : files.select("a[href]")) {
+            // 1) Try HTML path (files -> download)
+            try {
+                org.jsoup.nodes.Document doc = jsoup(value).get();
+                String filesPage = null;
+                for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
                     String href = a.attr("abs:href");
-                    if (href.endsWith("/download")) { downloadUrl = href; break; }
+                    if (href.contains("/files")) { filesPage = href; break; }
                 }
-            }
-            if (downloadUrl == null) {
-                for (Element a : anchors) {
-                    String href = a.attr("abs:href");
-                    if (href.endsWith("/download")) { downloadUrl = href; break; }
+                String downloadUrl = null;
+                if (filesPage != null) {
+                    org.jsoup.nodes.Document files = jsoup(filesPage).get();
+                    for (org.jsoup.nodes.Element a : files.select("a[href]")) {
+                        String href = a.attr("abs:href");
+                        if (href.endsWith("/download")) { downloadUrl = href; break; }
+                    }
                 }
-            }
-            if (downloadUrl == null) return false;
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+                if (downloadUrl == null) {
+                    for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
+                        String href = a.attr("abs:href");
+                        if (href.endsWith("/download")) { downloadUrl = href; break; }
+                    }
+                }
+                if (downloadUrl != null) {
+                    return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+                }
+            } catch (Throwable ignored) {}
+
+            // 2) Fallback like other.zip: legacy servermods API via data-project-id
+            try {
+                org.jsoup.nodes.Document doc = jsoup(value).get();
+                String pid = null;
+                for (org.jsoup.nodes.Element a : doc.select("a[data-project-id]")) {
+                    String v = a.attr("data-project-id");
+                    if (v != null && v.matches("\\d+")) { pid = v; break; }
+                }
+                if (pid == null) {
+                    // scan raw HTML if attribute on non-a elements
+                    String html = doc.outerHtml();
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("data-project-id=\"(\\d+)\"").matcher(html);
+                    if (m.find()) pid = m.group(1);
+                }
+                if (pid != null) {
+                    String api = "https://api.curseforge.com/servermods/files?projectIds=" + pid;
+                    com.fasterxml.jackson.databind.JsonNode arr = new com.fasterxml.jackson.databind.ObjectMapper()
+                            .readTree(new java.net.URL(api).openStream());
+                    if (arr.isArray() && arr.size() > 0) {
+                        com.fasterxml.jackson.databind.JsonNode best = null;
+                        long bestTs = Long.MIN_VALUE;
+                        for (com.fasterxml.jackson.databind.JsonNode it : arr) {
+                            long ts = it.has("fileDate") ? it.get("fileDate").asLong() : (it.has("id") ? it.get("id").asLong() : -1L);
+                            if (ts > bestTs) { bestTs = ts; best = it; }
+                        }
+                        if (best != null) {
+                            String dUrl = best.has("downloadUrl") ? best.get("downloadUrl").asText() : null;
+                            if (dUrl != null && !dUrl.isEmpty()) {
+                                return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
+                            }
+                        }
+                        com.fasterxml.jackson.databind.JsonNode last = arr.get(arr.size() - 1);
+                        String dUrl = last.has("downloadUrl") ? last.get("downloadUrl").asText() : null;
+                        if (dUrl != null && !dUrl.isEmpty()) {
+                            return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            return false;
         } catch (Exception e) {
             logger.info("Failed to parse CurseForge page: " + e.getMessage());
             return false;
         }
     }
 
+
     private boolean handleGenericPageDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
             try {
-                HttpURLConnection conn = (HttpURLConnection) new URL(value).openConnection();
-                conn.setRequestProperty("User-Agent", "AutoUpdatePlugins");
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(value).openConnection();
                 conn.setInstanceFollowRedirects(true);
-                conn.setConnectTimeout(common.UpdateOptions.connectTimeoutMs);
-                conn.setReadTimeout(common.UpdateOptions.readTimeoutMs);
+                conn.setConnectTimeout(Math.max(1000, common.UpdateOptions.connectTimeoutMs));
+                conn.setReadTimeout(Math.max(15000, common.UpdateOptions.readTimeoutMs));
+                conn.setRequestProperty("User-Agent", common.PluginDownloader.getEffectiveUserAgent());
+                for (java.util.Map.Entry<String,String> h : common.PluginDownloader.getExtraHeaders().entrySet()) {
+                    conn.setRequestProperty(h.getKey(), h.getValue());
+                }
                 int code = conn.getResponseCode();
                 String ct = conn.getContentType();
                 String cd = conn.getHeaderField("Content-Disposition");
@@ -484,7 +551,7 @@ public class PluginUpdater {
                 }
             } catch (IOException ignored) {}
 
-            Document doc = Jsoup.connect(value).userAgent("AutoUpdatePlugins").timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs)).get();
+            Document doc = jsoup(value).get();
             for (Element a : doc.select("a[href]")) {
                 String href = a.attr("abs:href");
                 if (href.endsWith(".jar")) {
@@ -634,10 +701,7 @@ public class PluginUpdater {
             String downloadUrl = null;
             if (releases == null || releases.size() == 0) {
                 try {
-                    org.jsoup.nodes.Document doc = org.jsoup.Jsoup.connect("https://github.com" + repoPath + "/releases")
-                            .userAgent("AutoUpdatePlugins")
-                            .timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs))
-                            .get();
+                    org.jsoup.nodes.Document doc = jsoup("https://github.com" + repoPath + "/releases").get();
                     for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
                         String href = a.attr("abs:href");
                         if (href.contains("/releases/download/") && href.endsWith(".jar")) {

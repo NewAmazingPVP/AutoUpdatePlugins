@@ -74,6 +74,13 @@ public class PluginDownloader {
         overrideUserAgent = (userAgent != null && !userAgent.trim().isEmpty()) ? userAgent.trim() : null;
     }
 
+    public static java.util.Map<String, String> getExtraHeaders() { return extraHeaders; }
+    public static String getEffectiveUserAgent() {
+        if (overrideUserAgent != null && !overrideUserAgent.isEmpty()) return overrideUserAgent;
+        if (!UpdateOptions.userAgents.isEmpty()) return UpdateOptions.userAgents.get(0);
+        return "AutoUpdatePlugins";
+    }
+
     private static void ensureClient() {
         if (pooledClient != null) return;
         synchronized (PluginDownloader.class) {
@@ -88,11 +95,28 @@ public class PluginDownloader {
                     .setConnectionRequestTimeout(Math.max(1000, common.UpdateOptions.connectTimeoutMs))
                     .build();
 
-            pooledClient = HttpClients.custom()
+            org.apache.http.impl.client.HttpClientBuilder builder = HttpClients.custom()
                     .setDefaultRequestConfig(rc)
                     .setConnectionManager(connMgr)
-                    .disableContentCompression()
-                    .build();
+                    .disableContentCompression();
+
+            if (!common.UpdateOptions.sslVerify) {
+                try {
+                    javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+                    sc.init(null, new javax.net.ssl.TrustManager[]{ new javax.net.ssl.X509TrustManager() {
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                    }}, new java.security.SecureRandom());
+                    org.apache.http.conn.ssl.SSLConnectionSocketFactory sslsf =
+                            new org.apache.http.conn.ssl.SSLConnectionSocketFactory(
+                                    sc, org.apache.http.conn.ssl.NoopHostnameVerifier.INSTANCE);
+                    builder.setSSLSocketFactory(sslsf);
+                } catch (Exception ignored) {}
+            }
+
+            pooledClient = builder.build();
+
         }
     }
 

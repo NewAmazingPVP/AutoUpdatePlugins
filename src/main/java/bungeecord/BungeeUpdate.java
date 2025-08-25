@@ -77,6 +77,26 @@ public final class BungeeUpdate extends Plugin {
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
+    private void applyHttpConfigBungee(net.md_5.bungee.config.Configuration config) {
+        try {
+            boolean sslVerify = config.getBoolean("http.sslVerify", true);
+            common.UpdateOptions.sslVerify = sslVerify;
+            if (!sslVerify) {
+                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
+                        new javax.net.ssl.X509TrustManager() {
+                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
+                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
+                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                        }
+                };
+                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new java.security.SecureRandom());
+                javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+                javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+            }
+        } catch (Throwable ignored) {}
+    }
+
     private void generateOrUpdateConfig() {
         cfgMgr.addDefault("updates.interval", 120, "Time between plugin updates in minutes");
         cfgMgr.addDefault("updates.bootTime", 50, "Delay in seconds after server startup before updating");
