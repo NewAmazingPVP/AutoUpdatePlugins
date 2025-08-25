@@ -20,15 +20,15 @@ import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
@@ -509,9 +509,10 @@ public class PluginUpdater {
                 try {
                     Matcher m = Pattern
                             .compile("/minecraft/[^/]+/([^/?#]+)", Pattern.CASE_INSENSITIVE)
-                            .matcher(new java.net.URL(url).getPath());
+                            .matcher(new URL(url).getPath());
                     if (m.find()) return m.group(1);
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                }
                 return null;
             };
 
@@ -528,16 +529,23 @@ public class PluginUpdater {
                         try {
                             TrustManager[] trustAll = new TrustManager[]{
                                     new X509TrustManager() {
-                                        public void checkClientTrusted(X509Certificate[] c, String a) {}
-                                        public void checkServerTrusted(X509Certificate[] c, String a) {}
-                                        public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                                        public void checkClientTrusted(X509Certificate[] c, String a) {
+                                        }
+
+                                        public void checkServerTrusted(X509Certificate[] c, String a) {
+                                        }
+
+                                        public X509Certificate[] getAcceptedIssuers() {
+                                            return new X509Certificate[0];
+                                        }
                                     }
                             };
                             SSLContext sc = SSLContext.getInstance("TLS");
-                            sc.init(null, trustAll, new java.security.SecureRandom());
+                            sc.init(null, trustAll, new SecureRandom());
                             ((HttpsURLConnection) conn).setSSLSocketFactory(sc.getSocketFactory());
                             ((HttpsURLConnection) conn).setHostnameVerifier((h, s) -> true);
-                        } catch (Throwable ignored) {}
+                        } catch (Throwable ignored) {
+                        }
                     }
 
                     conn.setInstanceFollowRedirects(true);
@@ -568,35 +576,40 @@ public class PluginUpdater {
                     String encoding = conn.getHeaderField("Content-Encoding");
                     InputStream in = raw;
                     try {
-                        if (encoding != null && encoding.toLowerCase(java.util.Locale.ROOT).contains("gzip")) {
+                        if (encoding != null && encoding.toLowerCase(Locale.ROOT).contains("gzip")) {
                             in = new GZIPInputStream(raw);
                         } else {
-                            in = new java.io.PushbackInputStream(raw, 2);
-                            java.io.PushbackInputStream pb = (java.io.PushbackInputStream) in;
+                            in = new PushbackInputStream(raw, 2);
+                            PushbackInputStream pb = (PushbackInputStream) in;
                             int b1 = pb.read();
                             int b2 = pb.read();
                             if (b1 == 0x1f && b2 == 0x8b) {
-                                pb.unread(new byte[]{(byte)b1, (byte)b2});
-                                in = new java.util.zip.GZIPInputStream(pb);
+                                pb.unread(new byte[]{(byte) b1, (byte) b2});
+                                in = new GZIPInputStream(pb);
                             } else {
-                                pb.unread(new byte[]{(byte)b1, (byte)b2});
+                                pb.unread(new byte[]{(byte) b1, (byte) b2});
                             }
                         }
-                    } catch (Throwable ignored) { in = raw; }
+                    } catch (Throwable ignored) {
+                        in = raw;
+                    }
 
                     String ctype = conn.getHeaderField("Content-Type");
                     String charsetName = "UTF-8";
                     if (ctype != null) {
-                        java.util.regex.Matcher m = java.util.regex.Pattern
-                                .compile("charset=([^;]+)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                        Matcher m = Pattern
+                                .compile("charset=([^;]+)", Pattern.CASE_INSENSITIVE)
                                 .matcher(ctype);
                         if (m.find()) charsetName = m.group(1).trim();
                     }
-                    java.nio.charset.Charset cs;
-                    try { cs = java.nio.charset.Charset.forName(charsetName); }
-                    catch (Throwable t) { cs = java.nio.charset.StandardCharsets.UTF_8; }
+                    Charset cs;
+                    try {
+                        cs = Charset.forName(charsetName);
+                    } catch (Throwable t) {
+                        cs = StandardCharsets.UTF_8;
+                    }
 
-                    try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(in, cs))) {
+                    try (BufferedReader br = new BufferedReader(new InputStreamReader(in, cs))) {
                         StringBuilder sb = new StringBuilder();
                         char[] buf = new char[8192];
                         int r;
@@ -622,22 +635,22 @@ public class PluginUpdater {
             }
 
             String projApi = "https://api.curseforge.com/servermods/projects?search=" +
-                    java.net.URLEncoder.encode(slug, java.nio.charset.StandardCharsets.UTF_8.name());
+                    URLEncoder.encode(slug, StandardCharsets.UTF_8.name());
             String projJson = httpGet.apply(projApi);
             if (projJson == null || projJson.isEmpty()) {
                 logger.info("[CF] servermods projects search returned nothing for slug=" + slug);
                 return false;
             }
 
-            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-            com.fasterxml.jackson.databind.JsonNode projArr = om.readTree(projJson);
+            ObjectMapper om = new ObjectMapper();
+            JsonNode projArr = om.readTree(projJson);
             if (!projArr.isArray() || projArr.size() == 0) {
                 logger.info("[CF] No projects found for slug=" + slug);
                 return false;
             }
 
             String projectId = null;
-            for (com.fasterxml.jackson.databind.JsonNode p : projArr) {
+            for (JsonNode p : projArr) {
                 String s = p.has("slug") ? p.get("slug").asText() : null;
                 if (slug.equalsIgnoreCase(s)) {
                     projectId = p.get("id").asText();
@@ -656,13 +669,13 @@ public class PluginUpdater {
                 return false;
             }
 
-            com.fasterxml.jackson.databind.JsonNode filesArr = om.readTree(filesJson);
+            JsonNode filesArr = om.readTree(filesJson);
             if (!filesArr.isArray() || filesArr.size() == 0) {
                 logger.info("[CF] No files for projectId=" + projectId);
                 return false;
             }
 
-            com.fasterxml.jackson.databind.JsonNode latest = filesArr.get(filesArr.size() - 1);
+            JsonNode latest = filesArr.get(filesArr.size() - 1);
 
             String downloadUrl = latest.has("downloadUrl") ? latest.get("downloadUrl").asText() : null;
             if (downloadUrl != null && !downloadUrl.isEmpty()) {
