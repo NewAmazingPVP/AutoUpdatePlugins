@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# **AutoUpdatePlugins v12.0.0**
+# **AutoUpdatePlugins v12.1.2**
 
 *Keep your server’s plugins up-to-date — automatically, safely, and across platforms.*
 
