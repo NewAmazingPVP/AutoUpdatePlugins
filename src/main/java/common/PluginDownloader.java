@@ -1,51 +1,46 @@
 package common;
 
-import org.jetbrains.annotations.NotNull;
-
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.logging.Logger;
-import java.util.logging.Level;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
-import java.util.zip.ZipFile;
-import java.util.zip.ZipInputStream;
-import java.util.jar.JarFile;
-import java.security.MessageDigest;
-import java.security.DigestInputStream;
-import java.util.Locale;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.file.DirectoryStream;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.FileVisitResult;
-// Apache HttpClient for pooled HTTP downloads on Java 8
+import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.*;
+import java.util.concurrent.Semaphore;
+import java.util.jar.JarFile;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 
 public class PluginDownloader {
 
     private final Logger logger;
-    private static java.util.Map<String, String> extraHeaders = new java.util.HashMap<>();
+    private static Map<String, String> extraHeaders = new HashMap<>();
     private static String overrideUserAgent = null;
     private static volatile CloseableHttpClient pooledClient = null;
     private static volatile PoolingHttpClientConnectionManager connMgr = null;
@@ -56,10 +51,10 @@ public class PluginDownloader {
     }
 
     private void backoffDelay(int attempt, int code, String link) {
-        int base = Math.max(0, common.UpdateOptions.backoffBaseMs);
-        int max = Math.max(base, common.UpdateOptions.backoffMaxMs);
-        int delay = Math.min(max, base * (1 << Math.min(attempt, 10))) + new java.util.Random().nextInt(250);
-        if (common.UpdateOptions.debug) {
+        int base = Math.max(0, UpdateOptions.backoffBaseMs);
+        int max = Math.max(base, UpdateOptions.backoffMaxMs);
+        int delay = Math.min(max, base * (1 << Math.min(attempt, 10))) + new Random().nextInt(250);
+        if (UpdateOptions.debug) {
             logger.info("[DEBUG] HTTP " + code + " for " + link + ", retry in ~" + delay + "ms (attempt " + attempt + ")");
         }
         try {
@@ -69,12 +64,15 @@ public class PluginDownloader {
         }
     }
 
-    public static void setHttpHeaders(java.util.Map<String, String> headers, String userAgent) {
-        extraHeaders = headers != null ? new java.util.HashMap<>(headers) : new java.util.HashMap<>();
+    public static void setHttpHeaders(Map<String, String> headers, String userAgent) {
+        extraHeaders = headers != null ? new HashMap<>(headers) : new HashMap<>();
         overrideUserAgent = (userAgent != null && !userAgent.trim().isEmpty()) ? userAgent.trim() : null;
     }
 
-    public static java.util.Map<String, String> getExtraHeaders() { return extraHeaders; }
+    public static Map<String, String> getExtraHeaders() {
+        return extraHeaders;
+    }
+
     public static String getEffectiveUserAgent() {
         if (overrideUserAgent != null && !overrideUserAgent.isEmpty()) return overrideUserAgent;
         if (!UpdateOptions.userAgents.isEmpty()) return UpdateOptions.userAgents.get(0);
@@ -86,33 +84,40 @@ public class PluginDownloader {
         synchronized (PluginDownloader.class) {
             if (pooledClient != null) return;
             connMgr = new PoolingHttpClientConnectionManager();
-            connMgr.setMaxTotal(Math.max(32, common.UpdateOptions.maxParallel * 4));
-            connMgr.setDefaultMaxPerRoute(Math.max(8, common.UpdateOptions.maxPerHost * 2));
+            connMgr.setMaxTotal(Math.max(32, UpdateOptions.maxParallel * 4));
+            connMgr.setDefaultMaxPerRoute(Math.max(8, UpdateOptions.maxPerHost * 2));
 
             RequestConfig rc = RequestConfig.custom()
-                    .setConnectTimeout(common.UpdateOptions.connectTimeoutMs)
-                    .setSocketTimeout(common.UpdateOptions.readTimeoutMs)
-                    .setConnectionRequestTimeout(Math.max(1000, common.UpdateOptions.connectTimeoutMs))
+                    .setConnectTimeout(UpdateOptions.connectTimeoutMs)
+                    .setSocketTimeout(UpdateOptions.readTimeoutMs)
+                    .setConnectionRequestTimeout(Math.max(1000, UpdateOptions.connectTimeoutMs))
                     .build();
 
-            org.apache.http.impl.client.HttpClientBuilder builder = HttpClients.custom()
+            HttpClientBuilder builder = HttpClients.custom()
                     .setDefaultRequestConfig(rc)
                     .setConnectionManager(connMgr)
                     .disableContentCompression();
 
-            if (!common.UpdateOptions.sslVerify) {
+            if (!UpdateOptions.sslVerify) {
                 try {
-                    javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                    sc.init(null, new javax.net.ssl.TrustManager[]{ new javax.net.ssl.X509TrustManager() {
-                        public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                        public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
-                    }}, new java.security.SecureRandom());
-                    org.apache.http.conn.ssl.SSLConnectionSocketFactory sslsf =
-                            new org.apache.http.conn.ssl.SSLConnectionSocketFactory(
-                                    sc, org.apache.http.conn.ssl.NoopHostnameVerifier.INSTANCE);
+                    SSLContext sc = SSLContext.getInstance("TLS");
+                    sc.init(null, new TrustManager[]{new X509TrustManager() {
+                        public void checkClientTrusted(X509Certificate[] c, String a) {
+                        }
+
+                        public void checkServerTrusted(X509Certificate[] c, String a) {
+                        }
+
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[0];
+                        }
+                    }}, new SecureRandom());
+                    SSLConnectionSocketFactory sslsf =
+                            new SSLConnectionSocketFactory(
+                                    sc, NoopHostnameVerifier.INSTANCE);
                     builder.setSSLSocketFactory(sslsf);
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
 
             pooledClient = builder.build();
@@ -120,27 +125,31 @@ public class PluginDownloader {
         }
     }
 
-    public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException{
+    public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException {
         String host = null;
-        java.util.concurrent.Semaphore hostSem = null;
+        Semaphore hostSem = null;
         try {
-            try { host = new URL(link).getHost(); } catch (Throwable ignored) {}
+            try {
+                host = new URL(link).getHost();
+            } catch (Throwable ignored) {
+            }
             if (host != null) {
-                hostSem = common.UpdateOptions.hostSemaphores.computeIfAbsent(host.toLowerCase(java.util.Locale.ROOT), h -> new java.util.concurrent.Semaphore(Math.max(1, common.UpdateOptions.maxPerHost)));
+                hostSem = UpdateOptions.hostSemaphores.computeIfAbsent(host.toLowerCase(Locale.ROOT), h -> new Semaphore(Math.max(1, UpdateOptions.maxPerHost)));
                 hostSem.acquireUninterruptibly();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         boolean requiresAuth = link.toLowerCase().contains("actions")
                 && link.toLowerCase().contains("github")
                 && githubToken != null && !githubToken.isEmpty();
 
-        String tempBase = common.UpdateOptions.tempPath != null && !common.UpdateOptions.tempPath.isEmpty() ? ensureDir(common.UpdateOptions.tempPath) : "plugins/";
+        String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
-        String outputFilePath   = getString(fileName);
-        String outputTempPath   = outputFilePath + ".temp";
+        String outputFilePath = getString(fileName);
+        String outputTempPath = outputFilePath + ".temp";
 
         try {
-            for (int attempt = 1; attempt <= Math.max(2, common.UpdateOptions.maxRetries); attempt++) {
+            for (int attempt = 1; attempt <= Math.max(2, UpdateOptions.maxRetries); attempt++) {
                 File rawTmp = new File(rawTempPath);
                 File outTmp = new File(outputTempPath);
                 cleanupQuietly(rawTmp);
@@ -185,8 +194,7 @@ public class PluginDownloader {
                     return false;
                 }
                 if (!downloadWithVerificationStream(rawTmp, r.body, r.contentLength, r.headers)) return false;
-                if (!verifyChecksumIfProvidedHeaders(rawTmp, r.headers)) return false;
-                return true;
+                return verifyChecksumIfProvidedHeaders(rawTmp, r.headers);
             } finally {
                 closeQuietly(r.body);
             }
@@ -206,10 +214,12 @@ public class PluginDownloader {
                     return false;
                 }
                 if (!downloadWithVerificationApache(rawTmp, resp)) return false;
-                if (!verifyChecksumIfProvidedApache(rawTmp, resp)) return false;
-                return true;
+                return verifyChecksumIfProvidedApache(rawTmp, resp);
             } finally {
-                try { resp.close(); } catch (IOException ignored) {}
+                try {
+                    resp.close();
+                } catch (IOException ignored) {
+                }
             }
         } catch (Exception e) {
             return false;
@@ -219,7 +229,10 @@ public class PluginDownloader {
     private boolean downloadWithUrlConnection(String link, String githubToken, boolean requiresAuth, File rawTmp, int attempt) throws IOException {
         HttpURLConnection connection = openConnection(link, githubToken, requiresAuth);
         int code = 0;
-        try { code = connection.getResponseCode(); } catch (IOException ignored) {}
+        try {
+            code = connection.getResponseCode();
+        } catch (IOException ignored) {
+        }
         if (code == 403 || code == 429 || (code >= 500 && code < 600)) {
             backoffDelay(attempt, code, link);
             return false;
@@ -256,8 +269,9 @@ public class PluginDownloader {
         }
 
         File target = new File(outputFilePath);
-        if (common.UpdateOptions.debug) logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-        if (common.UpdateOptions.ignoreDuplicates && target.exists() && target.length() == outTmp.length() && sameDigest(target, outTmp, "MD5")) {
+        if (UpdateOptions.debug)
+            logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
+        if (UpdateOptions.ignoreDuplicates && target.exists() && target.length() == outTmp.length() && sameDigest(target, outTmp, "MD5")) {
             cleanupQuietly(outTmp);
             cleanupQuietly(rawTmp);
             return true;
@@ -268,30 +282,27 @@ public class PluginDownloader {
     }
 
 
-
-
     private String getString(String fileName) {
         String basePlugins = "plugins/";
-        String configuredFilePath = common.UpdateOptions.filePath;
-        String configuredUpdatePath = common.UpdateOptions.updatePath;
+        String configuredFilePath = UpdateOptions.filePath;
+        String configuredUpdatePath = UpdateOptions.updatePath;
 
-        // If a custom file path is configured, always use it.
+
         if (configuredFilePath != null && !configuredFilePath.isEmpty()) {
             return ensureDir(configuredFilePath) + fileName + ".jar";
         }
 
-        // Default main jar path inside plugins/
+
         File mainJar = new File(basePlugins + fileName + ".jar");
 
-        // Respect useUpdateFolder flag for destination selection
-        if (common.UpdateOptions.useUpdateFolder) {
-            // Determine the update directory (configured or default) and ensure it exists
+
+        if (UpdateOptions.useUpdateFolder) {
+
             String updateDir = (configuredUpdatePath != null && !configuredUpdatePath.isEmpty())
                     ? ensureDir(configuredUpdatePath)
                     : ensureDir(basePlugins + "update/");
 
-            // If the plugin already exists, write to the update folder to avoid modifying in-use jars
-            // Otherwise, place the first install directly in plugins/
+
             if (mainJar.exists()) {
                 return updateDir + fileName + ".jar";
             } else {
@@ -299,7 +310,7 @@ public class PluginDownloader {
             }
         }
 
-        // Fallback: write directly to plugins/
+
         return basePlugins + fileName + ".jar";
     }
 
@@ -342,8 +353,8 @@ public class PluginDownloader {
         }
     }
 
-    public boolean downloadJenkinsPlugin(String link, String fileName){
-        String tempBase = common.UpdateOptions.tempPath != null && !common.UpdateOptions.tempPath.isEmpty() ? ensureDir(common.UpdateOptions.tempPath) : "plugins/";
+    public boolean downloadJenkinsPlugin(String link, String fileName) {
+        String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
         String outputFilePath = getString(fileName);
         String outputTempPath = outputFilePath + ".temp";
@@ -356,7 +367,7 @@ public class PluginDownloader {
             return false;
         }
 
-        for (int attempt = 1; attempt <= Math.max(2, common.UpdateOptions.maxRetries); attempt++) {
+        for (int attempt = 1; attempt <= Math.max(2, UpdateOptions.maxRetries); attempt++) {
             File rawTmp = new File(rawTempPath);
             File outTmp = new File(outputTempPath);
             cleanupQuietly(rawTmp);
@@ -364,13 +375,21 @@ public class PluginDownloader {
             try {
                 HttpURLConnection connection = openConnection(link, null, false);
                 int code = 0;
-                try { code = connection.getResponseCode(); } catch (IOException ignored) {}
+                try {
+                    code = connection.getResponseCode();
+                } catch (IOException ignored) {
+                }
                 if (code == 403 || code == 429 || (code >= 500 && code < 600)) {
-                    int base = Math.max(0, common.UpdateOptions.backoffBaseMs);
-                    int max = Math.max(base, common.UpdateOptions.backoffMaxMs);
-                    int delay = Math.min(max, base * (1 << Math.min(attempt, 10))) + new java.util.Random().nextInt(250);
-                    if (common.UpdateOptions.debug) logger.info("[DEBUG] HTTP " + code + " for " + link + ", retry in ~" + delay + "ms (attempt " + attempt + ")");
-                    try { Thread.sleep(delay); } catch (InterruptedException ignored2) { Thread.currentThread().interrupt(); }
+                    int base = Math.max(0, UpdateOptions.backoffBaseMs);
+                    int max = Math.max(base, UpdateOptions.backoffMaxMs);
+                    int delay = Math.min(max, base * (1 << Math.min(attempt, 10))) + new Random().nextInt(250);
+                    if (UpdateOptions.debug)
+                        logger.info("[DEBUG] HTTP " + code + " for " + link + ", retry in ~" + delay + "ms (attempt " + attempt + ")");
+                    try {
+                        Thread.sleep(delay);
+                    } catch (InterruptedException ignored2) {
+                        Thread.currentThread().interrupt();
+                    }
                     continue;
                 }
                 if (!downloadWithVerification(rawTmp, connection)) {
@@ -394,7 +413,8 @@ public class PluginDownloader {
                     continue;
                 }
                 File target = new File(outputFilePath);
-                if (common.UpdateOptions.debug) logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
+                if (UpdateOptions.debug)
+                    logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
                 if (target.exists() && target.length() == outTmp.length() && sameDigest(target, outTmp, "MD5")) {
                     cleanupQuietly(outTmp);
                     cleanupQuietly(rawTmp);
@@ -430,7 +450,8 @@ public class PluginDownloader {
     private void moveReplace(File from, File to) throws IOException {
         try {
             Files.createDirectories(to.getParentFile().toPath());
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
         try {
             Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException ex) {
@@ -445,8 +466,8 @@ public class PluginDownloader {
         String ua = (overrideUserAgent != null && !overrideUserAgent.trim().isEmpty()
                 && !"AutoUpdatePlugins".equalsIgnoreCase(overrideUserAgent))
                 ? overrideUserAgent.trim() : null;
-        if (ua == null && common.UpdateOptions.userAgents != null && !common.UpdateOptions.userAgents.isEmpty()) {
-            ua = common.UpdateOptions.userAgents.get(new java.util.Random().nextInt(common.UpdateOptions.userAgents.size()));
+        if (ua == null && UpdateOptions.userAgents != null && !UpdateOptions.userAgents.isEmpty()) {
+            ua = UpdateOptions.userAgents.get(new Random().nextInt(UpdateOptions.userAgents.size()));
         }
         if (ua == null) {
             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
@@ -462,23 +483,24 @@ public class PluginDownloader {
             connection.setRequestProperty("Authorization", "Bearer " + githubToken);
         }
         try {
-            java.net.URI uri = java.net.URI.create(link);
+            URI uri = URI.create(link);
             String origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? (":" + uri.getPort()) : "");
             connection.setRequestProperty("Referer", origin);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         if (extraHeaders != null) {
-            for (java.util.Map.Entry<String, String> e : extraHeaders.entrySet()) {
+            for (Map.Entry<String, String> e : extraHeaders.entrySet()) {
                 if (e.getKey() != null && e.getValue() != null) {
                     connection.setRequestProperty(e.getKey(), e.getValue());
                 }
             }
         }
 
-        connection.setConnectTimeout(common.UpdateOptions.connectTimeoutMs);
-        connection.setReadTimeout(common.UpdateOptions.readTimeoutMs);
+        connection.setConnectTimeout(UpdateOptions.connectTimeoutMs);
+        connection.setReadTimeout(UpdateOptions.readTimeoutMs);
 
-        if (common.UpdateOptions.debug) {
+        if (UpdateOptions.debug) {
             logger.info("[DEBUG] OpenConnection url=" + link + ", auth=" + requiresAuth + ", ua=" + ua);
         }
         return connection;
@@ -499,12 +521,16 @@ public class PluginDownloader {
     }
 
     private static class Java11Response {
-        final java.io.InputStream body;
+        final InputStream body;
         final int statusCode;
         final long contentLength;
-        final java.util.Map<String, String> headers;
-        Java11Response(java.io.InputStream body, int statusCode, long contentLength, java.util.Map<String, String> headers) {
-            this.body = body; this.statusCode = statusCode; this.contentLength = contentLength; this.headers = headers;
+        final Map<String, String> headers;
+
+        Java11Response(InputStream body, int statusCode, long contentLength, Map<String, String> headers) {
+            this.body = body;
+            this.statusCode = statusCode;
+            this.contentLength = contentLength;
+            this.headers = headers;
         }
     }
 
@@ -519,26 +545,26 @@ public class PluginDownloader {
         Class<?> durationCls = Class.forName("java.time.Duration");
 
         Object builder = httpClientCls.getMethod("newBuilder").invoke(null);
-        Object redirectNormal = java.lang.Enum.valueOf((Class<? extends Enum>) redirectCls.asSubclass(Enum.class), "NORMAL");
+        Object redirectNormal = Enum.valueOf((Class<? extends Enum>) redirectCls.asSubclass(Enum.class), "NORMAL");
         builder.getClass().getMethod("followRedirects", redirectCls).invoke(builder, redirectNormal);
-        Object connTimeout = durationCls.getMethod("ofMillis", long.class).invoke(null, (long) common.UpdateOptions.connectTimeoutMs);
+        Object connTimeout = durationCls.getMethod("ofMillis", long.class).invoke(null, (long) UpdateOptions.connectTimeoutMs);
         builder.getClass().getMethod("connectTimeout", durationCls).invoke(builder, connTimeout);
         Object client = builder.getClass().getMethod("build").invoke(builder);
 
-        java.net.URI uri = java.net.URI.create(link);
-        Object reqBuilder = httpRequestCls.getMethod("newBuilder", java.net.URI.class).invoke(null, uri);
+        URI uri = URI.create(link);
+        Object reqBuilder = httpRequestCls.getMethod("newBuilder", URI.class).invoke(null, uri);
 
         String ua = (overrideUserAgent != null && !overrideUserAgent.trim().isEmpty()
                 && !"AutoUpdatePlugins".equalsIgnoreCase(overrideUserAgent))
                 ? overrideUserAgent.trim() : null;
-        if (ua == null && common.UpdateOptions.userAgents != null && !common.UpdateOptions.userAgents.isEmpty()) {
-            ua = common.UpdateOptions.userAgents.get(new java.util.Random().nextInt(common.UpdateOptions.userAgents.size()));
+        if (ua == null && UpdateOptions.userAgents != null && !UpdateOptions.userAgents.isEmpty()) {
+            ua = UpdateOptions.userAgents.get(new Random().nextInt(UpdateOptions.userAgents.size()));
         }
         if (ua == null) {
             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
         }
 
-        // headers
+
         reqBuilder.getClass().getMethod("header", String.class, String.class).invoke(reqBuilder, "User-Agent", ua);
         reqBuilder.getClass().getMethod("header", String.class, String.class).invoke(reqBuilder, "Accept-Encoding", "identity");
         reqBuilder.getClass().getMethod("header", String.class, String.class).invoke(reqBuilder, "Accept", "application/octet-stream, */*");
@@ -547,14 +573,14 @@ public class PluginDownloader {
             reqBuilder.getClass().getMethod("header", String.class, String.class).invoke(reqBuilder, "Authorization", "Bearer " + githubToken);
         }
         if (extraHeaders != null) {
-            for (java.util.Map.Entry<String, String> e : extraHeaders.entrySet()) {
+            for (Map.Entry<String, String> e : extraHeaders.entrySet()) {
                 if (e.getKey() != null && e.getValue() != null) {
                     reqBuilder.getClass().getMethod("header", String.class, String.class).invoke(reqBuilder, e.getKey(), e.getValue());
                 }
             }
         }
 
-        Object readTimeout = durationCls.getMethod("ofMillis", long.class).invoke(null, (long) common.UpdateOptions.readTimeoutMs);
+        Object readTimeout = durationCls.getMethod("ofMillis", long.class).invoke(null, (long) UpdateOptions.readTimeoutMs);
         reqBuilder.getClass().getMethod("timeout", durationCls).invoke(reqBuilder, readTimeout);
         Object request = reqBuilder.getClass().getMethod("GET").invoke(reqBuilder);
         request = reqBuilder.getClass().getMethod("build").invoke(reqBuilder);
@@ -564,11 +590,12 @@ public class PluginDownloader {
 
         int status = (Integer) response.getClass().getMethod("statusCode").invoke(response);
         Object headers = response.getClass().getMethod("headers").invoke(response);
-        java.util.Map<String, java.util.List<String>> rawMap = (java.util.Map<String, java.util.List<String>>) headers.getClass().getMethod("map").invoke(headers);
-        java.util.Map<String, String> flat = new java.util.HashMap<>();
+        Map<String, List<String>> rawMap = (Map<String, List<String>>) headers.getClass().getMethod("map").invoke(headers);
+        Map<String, String> flat = new HashMap<>();
         if (rawMap != null) {
-            for (java.util.Map.Entry<String, java.util.List<String>> e : rawMap.entrySet()) {
-                if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty()) flat.put(e.getKey(), e.getValue().get(0));
+            for (Map.Entry<String, List<String>> e : rawMap.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null && !e.getValue().isEmpty())
+                    flat.put(e.getKey(), e.getValue().get(0));
             }
         }
         long expected = -1L;
@@ -576,13 +603,14 @@ public class PluginDownloader {
             String cl = flat.get("Content-Length");
             if (cl == null) cl = flat.get("content-length");
             if (cl != null) expected = Long.parseLong(cl.trim());
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
-        java.io.InputStream body = (java.io.InputStream) response.getClass().getMethod("body").invoke(response);
+        InputStream body = (InputStream) response.getClass().getMethod("body").invoke(response);
         return new Java11Response(body, status, expected, flat);
     }
 
-    private boolean downloadWithVerificationStream(File outFile, InputStream in, long expected, java.util.Map<String, String> headers) throws IOException {
+    private boolean downloadWithVerificationStream(File outFile, InputStream in, long expected, Map<String, String> headers) throws IOException {
         boolean canTrustLength = expected >= 0;
         long written = 0L;
         try (InputStream in0 = new BufferedInputStream(in, 65536); OutputStream out = new BufferedOutputStream(new FileOutputStream(outFile), 65536)) {
@@ -602,23 +630,25 @@ public class PluginDownloader {
         try (FileInputStream fis = new FileInputStream(outFile)) {
             byte[] probe = new byte[64];
             int n = fis.read(probe);
-            String head = (n > 0) ? new String(probe, 0, n, java.nio.charset.StandardCharsets.ISO_8859_1) : "";
-            String t = head.trim().toLowerCase(java.util.Locale.ROOT);
+            String head = (n > 0) ? new String(probe, 0, n, StandardCharsets.ISO_8859_1) : "";
+            String t = head.trim().toLowerCase(Locale.ROOT);
             if (t.startsWith("<!doctype html") || t.startsWith("<html")) {
                 cleanupQuietly(outFile);
                 return false;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         return true;
     }
 
-    private boolean verifyChecksumIfProvidedHeaders(File file, java.util.Map<String, String> headers) {
+    private boolean verifyChecksumIfProvidedHeaders(File file, Map<String, String> headers) {
         try {
             if (headers == null || headers.isEmpty()) return true;
-            java.util.Map<String, String> h = new java.util.HashMap<>();
-            for (java.util.Map.Entry<String, String> e : headers.entrySet()) {
-                if (e.getKey() != null && e.getValue() != null) h.put(e.getKey().toLowerCase(java.util.Locale.ROOT), e.getValue());
+            Map<String, String> h = new HashMap<>();
+            for (Map.Entry<String, String> e : headers.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null)
+                    h.put(e.getKey().toLowerCase(Locale.ROOT), e.getValue());
             }
             String sha256 = h.get("x-checksum-sha256");
             if (sha256 == null) sha256 = h.get("x-checksum-sha256");
@@ -628,8 +658,8 @@ public class PluginDownloader {
             if (etag != null) etag = stripQuotes(etag);
 
             if (notBlank(sha256)) return digestMatches(file, "SHA-256", sha256);
-            if (notBlank(sha1))   return digestMatches(file, "SHA-1", sha1);
-            if (notBlank(md5))    return digestMatches(file, "MD5", md5);
+            if (notBlank(sha1)) return digestMatches(file, "SHA-1", sha1);
+            if (notBlank(md5)) return digestMatches(file, "MD5", md5);
             if (notBlank(etag) && isHex(etag)) {
                 int len = etag.length();
                 if (len == 32) return digestMatches(file, "MD5", etag);
@@ -644,16 +674,20 @@ public class PluginDownloader {
     }
 
     private void closeQuietly(InputStream in) {
-        if (in != null) try { in.close(); } catch (IOException ignored) {}
+        if (in != null) try {
+            in.close();
+        } catch (IOException ignored) {
+        }
     }
+
     private CloseableHttpResponse executeApacheGet(String link, String githubToken, boolean requiresAuth) throws IOException {
         ensureClient();
         HttpGet get = new HttpGet(link);
         String ua = (overrideUserAgent != null && !overrideUserAgent.trim().isEmpty()
                 && !"AutoUpdatePlugins".equalsIgnoreCase(overrideUserAgent))
                 ? overrideUserAgent.trim() : null;
-        if (ua == null && common.UpdateOptions.userAgents != null && !common.UpdateOptions.userAgents.isEmpty()) {
-            ua = common.UpdateOptions.userAgents.get(new java.util.Random().nextInt(common.UpdateOptions.userAgents.size()));
+        if (ua == null && UpdateOptions.userAgents != null && !UpdateOptions.userAgents.isEmpty()) {
+            ua = UpdateOptions.userAgents.get(new Random().nextInt(UpdateOptions.userAgents.size()));
         }
         if (ua == null) {
             ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
@@ -667,7 +701,7 @@ public class PluginDownloader {
             get.setHeader("Authorization", "Bearer " + githubToken);
         }
         if (extraHeaders != null) {
-            for (java.util.Map.Entry<String, String> e : extraHeaders.entrySet()) {
+            for (Map.Entry<String, String> e : extraHeaders.entrySet()) {
                 if (e.getKey() != null && e.getValue() != null) {
                     get.setHeader(e.getKey(), e.getValue());
                 }
@@ -679,12 +713,13 @@ public class PluginDownloader {
 
     private static boolean isGithubishHost(String host) {
         if (host == null) return false;
-        String h = host.toLowerCase(java.util.Locale.ROOT);
+        String h = host.toLowerCase(Locale.ROOT);
         return h.endsWith("github.com")
                 || h.endsWith("githubusercontent.com")
                 || h.endsWith("codeload.github.com")
                 || h.endsWith("objects.githubusercontent.com");
     }
+
     private boolean downloadWithVerification(File outFile, HttpURLConnection connection) throws IOException {
         long expected = -1L;
         boolean canTrustLength = true;
@@ -693,21 +728,23 @@ public class PluginDownloader {
             expected = connection.getContentLengthLong();
             String ce = connection.getHeaderField("Content-Encoding");
             String te = connection.getHeaderField("Transfer-Encoding");
-            if (expected < 0 || (ce != null && !"identity".equalsIgnoreCase(ce)) || (te != null && "chunked".equalsIgnoreCase(te))) {
+            if (expected < 0 || (ce != null && !"identity".equalsIgnoreCase(ce)) || ("chunked".equalsIgnoreCase(te))) {
                 canTrustLength = false;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         long written = 0L;
         try (InputStream in = new BufferedInputStream(connection.getInputStream(), 65536); OutputStream out = new BufferedOutputStream(new FileOutputStream(outFile), 65536)) {
-            if (common.UpdateOptions.debug) {
+            if (UpdateOptions.debug) {
                 try {
                     logger.info("[DEBUG] HTTP code=" + connection.getResponseCode()
                             + ", type=" + connection.getContentType()
                             + ", length=" + expected
                             + (connection.getHeaderField("Content-Encoding") != null
                             ? ", enc=" + connection.getHeaderField("Content-Encoding") : ""));
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                }
             }
             byte[] buffer = new byte[65536];
             int n;
@@ -726,13 +763,14 @@ public class PluginDownloader {
         try (FileInputStream fis = new FileInputStream(outFile)) {
             byte[] probe = new byte[64];
             int n = fis.read(probe);
-            String head = (n > 0) ? new String(probe, 0, n, java.nio.charset.StandardCharsets.ISO_8859_1) : "";
-            String t = head.trim().toLowerCase(java.util.Locale.ROOT);
+            String head = (n > 0) ? new String(probe, 0, n, StandardCharsets.ISO_8859_1) : "";
+            String t = head.trim().toLowerCase(Locale.ROOT);
             if (t.startsWith("<!doctype html") || t.startsWith("<html")) {
                 cleanupQuietly(outFile);
                 return false;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         return true;
     }
@@ -762,20 +800,21 @@ public class PluginDownloader {
         try (FileInputStream fis = new FileInputStream(outFile)) {
             byte[] probe = new byte[64];
             int n = fis.read(probe);
-            String head = (n > 0) ? new String(probe, 0, n, java.nio.charset.StandardCharsets.ISO_8859_1) : "";
-            String t = head.trim().toLowerCase(java.util.Locale.ROOT);
+            String head = (n > 0) ? new String(probe, 0, n, StandardCharsets.ISO_8859_1) : "";
+            String t = head.trim().toLowerCase(Locale.ROOT);
             if (t.startsWith("<!doctype html") || t.startsWith("<html")) {
                 cleanupQuietly(outFile);
                 return false;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         return true;
     }
 
     private boolean verifyChecksumIfProvidedApache(File file, CloseableHttpResponse response) {
         try {
-            org.apache.http.Header h;
+            Header h;
             String sha256 = (h = response.getFirstHeader("X-Checksum-SHA256")) != null ? h.getValue() : null;
             if (sha256 == null && (h = response.getFirstHeader("X-Checksum-Sha256")) != null) sha256 = h.getValue();
             String sha1 = (h = response.getFirstHeader("X-Checksum-SHA1")) != null ? h.getValue() : null;
@@ -784,8 +823,8 @@ public class PluginDownloader {
             String etag = (h = response.getFirstHeader("ETag")) != null ? stripQuotes(h.getValue()) : null;
 
             if (notBlank(sha256)) return digestMatches(file, "SHA-256", sha256);
-            if (notBlank(sha1))   return digestMatches(file, "SHA-1", sha1);
-            if (notBlank(md5))    return digestMatches(file, "MD5", md5);
+            if (notBlank(sha1)) return digestMatches(file, "SHA-1", sha1);
+            if (notBlank(md5)) return digestMatches(file, "MD5", md5);
 
             if (notBlank(etag) && isHex(etag)) {
                 int len = etag.length();
@@ -801,14 +840,12 @@ public class PluginDownloader {
     }
 
 
-
-
     private boolean downloadLenient(File outFile, HttpURLConnection connection) {
-        java.io.InputStream in = null;
-        java.io.OutputStream out = null;
+        InputStream in = null;
+        OutputStream out = null;
         try {
             in = new BufferedInputStream(connection.getInputStream(), 65536);
-            out = new BufferedOutputStream(new java.io.FileOutputStream(outFile), 65536);
+            out = new BufferedOutputStream(new FileOutputStream(outFile), 65536);
             byte[] buffer = new byte[65536];
             int r;
             while ((r = in.read(buffer)) != -1) out.write(buffer, 0, r);
@@ -817,17 +854,21 @@ public class PluginDownloader {
         } catch (IOException e) {
             return false;
         } finally {
-            if (in != null) try { in.close(); } catch (Exception ignored) {}
-            if (out != null) try { out.close(); } catch (Exception ignored) {}
+            if (in != null) try {
+                in.close();
+            } catch (Exception ignored) {
+            }
+            if (out != null) try {
+                out.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 
 
-
-
     public boolean buildFromGitHubRepo(String repoPath, String fileName, String key) throws IOException {
         if (repoPath == null || repoPath.isEmpty()) throw new IOException("Invalid repo path");
-        if (common.UpdateOptions.debug) logger.info("[DEBUG] Starting GitHub build for " + repoPath);
+        if (UpdateOptions.debug) logger.info("[DEBUG] Starting GitHub build for " + repoPath);
 
         String defaultBranch = "main";
         try {
@@ -841,9 +882,12 @@ public class PluginDownloader {
                 try {
                     while ((r = in.read(buf)) != -1) baos.write(buf, 0, r);
                 } finally {
-                    try { in.close(); } catch (Exception ignored) {}
+                    try {
+                        in.close();
+                    } catch (Exception ignored) {
+                    }
                 }
-                String json = new String(baos.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+                String json = new String(baos.toByteArray(), StandardCharsets.UTF_8);
                 int i = json.indexOf("\"default_branch\"");
                 if (i >= 0) {
                     int c = json.indexOf(':', i);
@@ -856,11 +900,12 @@ public class PluginDownloader {
                     }
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         if (defaultBranch == null || defaultBranch.trim().isEmpty()) defaultBranch = "main";
 
-        String[] branches = new String[] { defaultBranch, "main", "master" };
+        String[] branches = new String[]{defaultBranch, "main", "master"};
         File workDir = new File("plugins/build/" + fileName + "-" + System.currentTimeMillis());
         if (!workDir.mkdirs()) throw new IOException("Unable to create build dir: " + workDir);
 
@@ -872,14 +917,18 @@ public class PluginDownloader {
                 HttpURLConnection c = openConnection(zipUrl, key, true);
                 c.setRequestProperty("Accept", "application/zip");
                 c.setRequestProperty("Accept-Encoding", "identity");
-                if (downloadLenient(zipFile, c)) { gotZip = true; break; }
-            } catch (Throwable ignored) {}
+                if (downloadLenient(zipFile, c)) {
+                    gotZip = true;
+                    break;
+                }
+            } catch (Throwable ignored) {
+            }
         }
         if (!gotZip) {
             logger.warning("Could not download repo zip for " + repoPath);
             throw new IOException("Could not download repo zip for " + repoPath);
         }
-        if (common.UpdateOptions.debug) logger.info("[DEBUG] Downloaded repo zip to " + zipFile.getAbsolutePath());
+        if (UpdateOptions.debug) logger.info("[DEBUG] Downloaded repo zip to " + zipFile.getAbsolutePath());
 
         File repoRoot = new File(workDir, "repo");
         if (!repoRoot.exists() && !repoRoot.mkdirs()) {
@@ -892,7 +941,7 @@ public class PluginDownloader {
             logger.warning("No Maven/Gradle build file found in " + repoRoot.getAbsolutePath());
             throw new IOException("No Maven/Gradle build file found in " + repoRoot.getAbsolutePath());
         }
-        if (common.UpdateOptions.debug) logger.info("[DEBUG] Build root: " + buildRoot.getAbsolutePath());
+        if (UpdateOptions.debug) logger.info("[DEBUG] Build root: " + buildRoot.getAbsolutePath());
 
         boolean isMaven = new File(buildRoot, "pom.xml").exists();
         boolean isGradle = !isMaven && (new File(buildRoot, "build.gradle").exists() || new File(buildRoot, "build.gradle.kts").exists());
@@ -925,34 +974,32 @@ public class PluginDownloader {
             throw new IOException("Build failed with exit code " + exit);
         }
 
-        // 6) Pick the plugin jar (prefer shadow/all/shaded; skip sources/javadoc/original)
+
         File jar = pickBuiltJar(buildRoot);
         if (jar == null) {
             logger.warning("Could not locate built jar in " + buildRoot);
             throw new IOException("Could not locate built jar in " + buildRoot);
         }
 
-        // 7) Move to update folder
+
         File out = new File("plugins/update/" + fileName + ".jar");
-        if (common.UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
+        if (UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
         copyFile(jar, out);
         return true;
     }
 
 
-    
-
-    private java.util.Optional<Path> findSingleTopDir(Path dir) throws IOException {
+    private Optional<Path> findSingleTopDir(Path dir) throws IOException {
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir)) {
             Path only = null;
             int count = 0;
             for (Path p : ds) {
                 count++;
                 only = p;
-                if (count > 1) return java.util.Optional.empty();
+                if (count > 1) return Optional.empty();
             }
-            if (only != null && Files.isDirectory(only)) return java.util.Optional.of(only);
-            return java.util.Optional.empty();
+            if (only != null && Files.isDirectory(only)) return Optional.of(only);
+            return Optional.empty();
         }
     }
 
@@ -974,7 +1021,9 @@ public class PluginDownloader {
         pb.redirectErrorStream(true);
         Process p = pb.start();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-            String line; while ((line = r.readLine()) != null) { /* optionally log */ }
+            String line;
+            while ((line = r.readLine()) != null) {
+            }
         }
         int code = p.waitFor();
         if (code != 0) logger.info("Gradle build exited with code " + code);
@@ -995,7 +1044,9 @@ public class PluginDownloader {
         pb.redirectErrorStream(true);
         Process p = pb.start();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-            String line; while ((line = r.readLine()) != null) { /* optionally log */ }
+            String line;
+            while ((line = r.readLine()) != null) {
+            }
         }
         int code = p.waitFor();
         if (code != 0) logger.info("Maven build exited with code " + code);
@@ -1030,19 +1081,28 @@ public class PluginDownloader {
         if (dir == null || !Files.exists(dir)) return;
         try {
             Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
-                @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    Files.deleteIfExists(file); return FileVisitResult.CONTINUE;
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                    Files.deleteIfExists(file);
+                    return FileVisitResult.CONTINUE;
                 }
-                @Override public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
-                    Files.deleteIfExists(d); return FileVisitResult.CONTINUE;
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
+                    Files.deleteIfExists(d);
+                    return FileVisitResult.CONTINUE;
                 }
             });
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
     }
 
     private void cleanupQuietly(File f) {
         if (f != null && f.exists()) {
-            try { Files.delete(f.toPath()); } catch (IOException ignored) {}
+            try {
+                Files.delete(f.toPath());
+            } catch (IOException ignored) {
+            }
         }
     }
 
@@ -1058,13 +1118,13 @@ public class PluginDownloader {
     private boolean verifyChecksumIfProvided(File file, HttpURLConnection connection) {
         try {
             String sha256 = coalesceHeader(connection, "X-Checksum-SHA256", "X-Checksum-Sha256");
-            String sha1   = coalesceHeader(connection, "X-Checksum-SHA1", "X-Checksum-Sha1");
-            String md5    = coalesceHeader(connection, "X-Checksum-MD5");
-            String etag   = stripQuotes(connection.getHeaderField("ETag"));
+            String sha1 = coalesceHeader(connection, "X-Checksum-SHA1", "X-Checksum-Sha1");
+            String md5 = coalesceHeader(connection, "X-Checksum-MD5");
+            String etag = stripQuotes(connection.getHeaderField("ETag"));
 
             if (notBlank(sha256)) return digestMatches(file, "SHA-256", sha256);
-            if (notBlank(sha1))   return digestMatches(file, "SHA-1", sha1);
-            if (notBlank(md5))    return digestMatches(file, "MD5", md5);
+            if (notBlank(sha1)) return digestMatches(file, "SHA-1", sha1);
+            if (notBlank(md5)) return digestMatches(file, "MD5", md5);
 
             if (notBlank(etag) && isHex(etag)) {
                 int len = etag.length();
@@ -1102,7 +1162,8 @@ public class PluginDownloader {
         MessageDigest md = MessageDigest.getInstance(algorithm);
         try (InputStream in = new BufferedInputStream(new FileInputStream(file), 65536); DigestInputStream dis = new DigestInputStream(in, md)) {
             byte[] buf = new byte[65536];
-            while (dis.read(buf) != -1) { /* no-op */ }
+            while (dis.read(buf) != -1) {
+            }
         }
         byte[] digest = md.digest();
         StringBuilder sb = new StringBuilder(digest.length * 2);
@@ -1118,8 +1179,14 @@ public class PluginDownloader {
         return null;
     }
 
-    private boolean notBlank(String s) { return s != null && !s.trim().isEmpty(); }
-    private String stripQuotes(String s) { return s == null ? null : s.replace("\"", "").trim(); }
+    private boolean notBlank(String s) {
+        return s != null && !s.trim().isEmpty();
+    }
+
+    private String stripQuotes(String s) {
+        return s == null ? null : s.replace("\"", "").trim();
+    }
+
     private boolean isHex(String s) {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
@@ -1130,7 +1197,6 @@ public class PluginDownloader {
     }
 
 
-    // unzip the downloaded repo
     private void unzipTo(File zip, File destDir) throws IOException {
         try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip), 65536))) {
             ZipEntry entry;
@@ -1156,7 +1222,7 @@ public class PluginDownloader {
     }
 
     private File findBuildRoot(File root) {
-        java.util.ArrayDeque<File> q = new java.util.ArrayDeque<File>();
+        ArrayDeque<File> q = new ArrayDeque<File>();
         File[] kids = root.listFiles();
         if (kids != null) {
             for (File f : kids) if (f.isDirectory()) q.add(f);
@@ -1164,12 +1230,16 @@ public class PluginDownloader {
         int depth = 0;
         while (!q.isEmpty() && depth <= 3) {
             int sz = q.size();
-            for (int i=0; i<sz; i++) {
+            for (int i = 0; i < sz; i++) {
                 File d = q.poll();
                 if (new File(d, "pom.xml").exists()) return d;
                 if (new File(d, "build.gradle").exists() || new File(d, "build.gradle.kts").exists()) return d;
-                File[] subs = d.listFiles(new java.io.FileFilter(){ public boolean accept(File f){ return f.isDirectory(); }});
-                if (subs != null) for (File s : subs) q.add(s);
+                File[] subs = d.listFiles(new FileFilter() {
+                    public boolean accept(File f) {
+                        return f.isDirectory();
+                    }
+                });
+                if (subs != null) Collections.addAll(q, subs);
             }
             depth++;
         }
@@ -1184,15 +1254,22 @@ public class PluginDownloader {
         return null;
     }
 
-    private void setExecutable(File f) { try { f.setExecutable(true); } catch (Throwable ignored) {} }
+    private void setExecutable(File f) {
+        try {
+            f.setExecutable(true);
+        } catch (Throwable ignored) {
+        }
+    }
 
     private boolean fileContains(File f) {
         if (!f.exists()) return false;
         try {
-            byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
-            String s = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            byte[] bytes = Files.readAllBytes(f.toPath());
+            String s = new String(bytes, StandardCharsets.UTF_8);
             return s.indexOf("shadowJar") >= 0 || s.indexOf("com.github.johnrengelman.shadow") >= 0;
-        } catch (IOException e) { return false; }
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     private int run(File cwd, String... cmd) {
@@ -1201,57 +1278,80 @@ public class PluginDownloader {
             pb.directory(cwd);
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
             try {
                 String line;
                 while ((line = r.readLine()) != null) {
-                    if (common.UpdateOptions.debug) logger.info("[DEBUG] " + line);
+                    if (UpdateOptions.debug) logger.info("[DEBUG] " + line);
                 }
             } finally {
-                try { r.close(); } catch (Exception ignored) {}
+                try {
+                    r.close();
+                } catch (Exception ignored) {
+                }
             }
             return p.waitFor();
         } catch (Exception e) {
-            if (common.UpdateOptions.debug) logger.info("[DEBUG] Build failed to start: " + e.getMessage());
+            if (UpdateOptions.debug) logger.info("[DEBUG] Build failed to start: " + e.getMessage());
             return -1;
         }
     }
 
     private File pickBuiltJar(File buildRoot) {
-        // collect candidates
-        java.util.List<File> candidates = new java.util.ArrayList<File>();
+
+        List<File> candidates = new ArrayList<File>();
         File libs = new File(buildRoot, "build/libs");
         if (libs.isDirectory()) {
-            File[] arr = libs.listFiles(new java.io.FilenameFilter(){ public boolean accept(File d, String n){ return n.endsWith(".jar"); }});
-            if (arr != null) java.util.Collections.addAll(candidates, arr);
+            File[] arr = libs.listFiles(new FilenameFilter() {
+                public boolean accept(File d, String n) {
+                    return n.endsWith(".jar");
+                }
+            });
+            if (arr != null) Collections.addAll(candidates, arr);
         }
         File target = new File(buildRoot, "target");
         if (target.isDirectory()) {
-            File[] arr = target.listFiles(new java.io.FilenameFilter(){ public boolean accept(File d, String n){ return n.endsWith(".jar"); }});
-            if (arr != null) java.util.Collections.addAll(candidates, arr);
+            File[] arr = target.listFiles(new FilenameFilter() {
+                public boolean accept(File d, String n) {
+                    return n.endsWith(".jar");
+                }
+            });
+            if (arr != null) Collections.addAll(candidates, arr);
         }
 
-        // search submodules (depth <= 3)
+
         if (candidates.isEmpty()) {
-            java.util.ArrayDeque<File> q = new java.util.ArrayDeque<File>();
+            ArrayDeque<File> q = new ArrayDeque<File>();
             q.add(buildRoot);
             int depth = 0;
             while (!q.isEmpty() && depth <= 3) {
                 int sz = q.size();
-                for (int i=0; i<sz; i++) {
+                for (int i = 0; i < sz; i++) {
                     File d = q.poll();
                     File lib = new File(d, "build/libs");
                     if (lib.isDirectory()) {
-                        File[] arr = lib.listFiles(new java.io.FilenameFilter(){ public boolean accept(File dd, String n){ return n.endsWith(".jar"); }});
-                        if (arr != null) java.util.Collections.addAll(candidates, arr);
+                        File[] arr = lib.listFiles(new FilenameFilter() {
+                            public boolean accept(File dd, String n) {
+                                return n.endsWith(".jar");
+                            }
+                        });
+                        if (arr != null) Collections.addAll(candidates, arr);
                     }
                     File tgt = new File(d, "target");
                     if (tgt.isDirectory()) {
-                        File[] arr = tgt.listFiles(new java.io.FilenameFilter(){ public boolean accept(File dd, String n){ return n.endsWith(".jar"); }});
-                        if (arr != null) java.util.Collections.addAll(candidates, arr);
+                        File[] arr = tgt.listFiles(new FilenameFilter() {
+                            public boolean accept(File dd, String n) {
+                                return n.endsWith(".jar");
+                            }
+                        });
+                        if (arr != null) Collections.addAll(candidates, arr);
                     }
-                    File[] subs = d.listFiles(new java.io.FileFilter(){ public boolean accept(File f){ return f.isDirectory(); }});
-                    if (subs != null) for (File s : subs) q.add(s);
+                    File[] subs = d.listFiles(new FileFilter() {
+                        public boolean accept(File f) {
+                            return f.isDirectory();
+                        }
+                    });
+                    if (subs != null) Collections.addAll(q, subs);
                 }
                 depth++;
             }
@@ -1259,10 +1359,10 @@ public class PluginDownloader {
 
         if (candidates.isEmpty()) return null;
 
-        // filter out sources/javadoc/original/tests
-        java.util.List<File> filtered = new java.util.ArrayList<File>(candidates.size());
+
+        List<File> filtered = new ArrayList<File>(candidates.size());
         for (File f : candidates) {
-            String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+            String n = f.getName().toLowerCase(Locale.ROOT);
             if (n.indexOf("-sources") >= 0) continue;
             if (n.indexOf("-javadoc") >= 0) continue;
             if (n.indexOf("original-") >= 0) continue;
@@ -1272,11 +1372,11 @@ public class PluginDownloader {
         }
         if (filtered.isEmpty()) filtered = candidates;
 
-        // score: prefer shadow/all/shaded, then name with "plugin"
-        java.util.Collections.sort(filtered, new java.util.Comparator<File>(){
+
+        Collections.sort(filtered, new Comparator<File>() {
             public int compare(File a, File b) {
-                int sa = scoreJar(a.getName().toLowerCase(java.util.Locale.ROOT));
-                int sb = scoreJar(b.getName().toLowerCase(java.util.Locale.ROOT));
+                int sa = scoreJar(a.getName().toLowerCase(Locale.ROOT));
+                int sb = scoreJar(b.getName().toLowerCase(Locale.ROOT));
                 return (sb - sa);
             }
         });
@@ -1295,7 +1395,7 @@ public class PluginDownloader {
     private void copyFile(File src, File dst) throws IOException {
         File parent = dst.getParentFile();
         if (parent != null && !parent.exists()) parent.mkdirs();
-        java.nio.file.Files.copy(src.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
     }
 
 }

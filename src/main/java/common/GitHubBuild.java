@@ -3,15 +3,21 @@ package common;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public final class GitHubBuild {
-    private GitHubBuild() {}
+    private GitHubBuild() {
+    }
 
     public static boolean handleGitHubBuild(
             Logger log,
@@ -52,7 +58,10 @@ public final class GitHubBuild {
                 log.warning("[AutoUpdatePlugins] [DEBUG] No jar produced for " + repoUrl);
                 return false;
             } finally {
-                try { deleteRecursive(work); } catch (Exception ignore) {}
+                try {
+                    deleteRecursive(work);
+                } catch (Exception ignore) {
+                }
             }
         } catch (Exception e) {
             log.warning("[AutoUpdatePlugins] [DEBUG] handleGitHubBuild error: " + e.getMessage());
@@ -77,7 +86,8 @@ public final class GitHubBuild {
                 log.info("[AutoUpdatePlugins] [DEBUG] Default branch for " + ref.owner + "/" + ref.name + " = " + branch);
                 return branch;
             }
-        } catch (Exception ignore) {}
+        } catch (Exception ignore) {
+        }
         return null;
     }
 
@@ -120,24 +130,24 @@ public final class GitHubBuild {
         }
     }
 
-    // ---------- Wrapper/system builds ----------
+
     private static boolean tryGradleThenMaven(Logger log, Path project) {
         boolean isWindows = System.getProperty("os.name").toLowerCase(Locale.ENGLISH).contains("win");
 
         Path gradlew = project.resolve(isWindows ? "gradlew.bat" : "gradlew");
-        Path mvnw    = project.resolve(isWindows ? "mvnw.cmd"   : "mvnw");
+        Path mvnw = project.resolve(isWindows ? "mvnw.cmd" : "mvnw");
 
-        // Gradle wrapper
+
         if (Files.isRegularFile(gradlew)) {
             log.info("[AutoUpdatePlugins] [DEBUG] Using Gradle wrapper: " + gradlew);
             if (runBuild(log, project, gradlew, Arrays.asList("build", "-x", "test"))) return true;
         }
-        // Maven wrapper
+
         if (Files.isRegularFile(mvnw)) {
             log.info("[AutoUpdatePlugins] [DEBUG] Using Maven wrapper: " + mvnw);
             if (runBuild(log, project, mvnw, Arrays.asList("-q", "-DskipTests", "package"))) return true;
         }
-        // System tools (if installed)
+
         if (Files.isRegularFile(project.resolve("build.gradle")) || Files.isRegularFile(project.resolve("build.gradle.kts"))) {
             String gradleCmd = isWindows ? "gradle.bat" : "gradle";
             log.info("[AutoUpdatePlugins] [DEBUG] Trying system Gradle: " + gradleCmd);
@@ -146,7 +156,7 @@ public final class GitHubBuild {
         if (Files.isRegularFile(project.resolve("pom.xml"))) {
             String mvnCmd = isWindows ? "mvn.cmd" : "mvn";
             log.info("[AutoUpdatePlugins] [DEBUG] Trying system Maven: " + mvnCmd);
-            if (runBuild(log, project, Paths.get(mvnCmd), Arrays.asList("-q", "-DskipTests", "package"))) return true;
+            return runBuild(log, project, Paths.get(mvnCmd), Arrays.asList("-q", "-DskipTests", "package"));
         }
         return false;
     }
@@ -155,9 +165,14 @@ public final class GitHubBuild {
         boolean isWindows = System.getProperty("os.name").toLowerCase(Locale.ENGLISH).contains("win");
         List<String> cmd = new ArrayList<String>();
         if (isWindows) {
-            cmd.add("cmd"); cmd.add("/c"); cmd.add(exe.toString());
+            cmd.add("cmd");
+            cmd.add("/c");
+            cmd.add(exe.toString());
         } else {
-            try { exe.toFile().setExecutable(true); } catch (Exception ignore) {}
+            try {
+                exe.toFile().setExecutable(true);
+            } catch (Exception ignore) {
+            }
             cmd.add(exe.toString());
         }
         cmd.addAll(args);
@@ -171,9 +186,16 @@ public final class GitHubBuild {
             t.setDaemon(true);
             t.start();
             boolean finished = p.waitFor(20, TimeUnit.MINUTES);
-            if (!finished) { p.destroyForcibly(); log.warning("[AutoUpdatePlugins] [DEBUG] Build timed out."); return false; }
+            if (!finished) {
+                p.destroyForcibly();
+                log.warning("[AutoUpdatePlugins] [DEBUG] Build timed out.");
+                return false;
+            }
             int ec = p.exitValue();
-            if (ec != 0) { log.warning("[AutoUpdatePlugins] [DEBUG] Build exited with code " + ec); return false; }
+            if (ec != 0) {
+                log.warning("[AutoUpdatePlugins] [DEBUG] Build exited with code " + ec);
+                return false;
+            }
             return true;
         } catch (IOException | InterruptedException e) {
             log.warning("[AutoUpdatePlugins] [DEBUG] Build failed to start: " + e.getMessage());
@@ -181,7 +203,7 @@ public final class GitHubBuild {
         }
     }
 
-    // Recursively find the biggest reasonable jar
+
     private static boolean selectBuiltJarRecursive(Logger log, Path project, Path out) {
         final File root = project.toFile();
         final List<File> jars = new ArrayList<File>();
@@ -216,14 +238,14 @@ public final class GitHubBuild {
         }
     }
 
-    // ---------- JitPack (smart) ----------
+
     private static boolean tryJitPackSmart(Logger log, Repo ref, Path out) {
-        // Version candidates
-        String[] vers = new String[] { ref.branch + "-SNAPSHOT", (ref.branch.equals("master") ? "main" : "master") + "-SNAPSHOT" };
+
+        String[] vers = new String[]{ref.branch + "-SNAPSHOT", (ref.branch.equals("master") ? "main" : "master") + "-SNAPSHOT"};
         for (int i = 0; i < vers.length; i++) {
             String v = vers[i];
             String base = "https://jitpack.io";
-            String api  = base + "/api/builds/com.github/" + ref.owner + "/" + ref.name + "/" + v;
+            String api = base + "/api/builds/com.github/" + ref.owner + "/" + ref.name + "/" + v;
             try {
                 HttpURLConnection c = open(api, null);
                 int code = c.getResponseCode();
@@ -231,10 +253,16 @@ public final class GitHubBuild {
                     if (!tryTriggerJitPack(log, ref, v)) continue;
                     boolean ready = false;
                     for (int k = 0; k < 10; k++) {
-                        try { Thread.sleep(3000); } catch (InterruptedException ignore) {}
+                        try {
+                            Thread.sleep(3000);
+                        } catch (InterruptedException ignore) {
+                        }
                         c = open(api, null);
                         code = c.getResponseCode();
-                        if (code == 200) { ready = true; break; }
+                        if (code == 200) {
+                            ready = true;
+                            break;
+                        }
                     }
                     if (!ready) continue;
                 } else if (code != 200) {
@@ -250,7 +278,8 @@ public final class GitHubBuild {
                 log.info("[AutoUpdatePlugins] [DEBUG] Trying JitPack jar: " + jarUrl);
                 httpGetToFile(log, jarUrl, out, null);
                 if (Files.size(out) > 10 * 1024) return true;
-            } catch (Exception ignore) {}
+            } catch (Exception ignore) {
+            }
         }
         log.info("[AutoUpdatePlugins] [DEBUG] JitPack fallback failed.");
         return false;
@@ -299,12 +328,16 @@ public final class GitHubBuild {
                     try {
                         int r;
                         while ((r = zis.read(buf)) != -1) os.write(buf, 0, r);
-                    } finally { os.close(); }
+                    } finally {
+                        os.close();
+                    }
                 }
                 zis.closeEntry();
             }
             zis.close();
-        } finally { in.close(); }
+        } finally {
+            in.close();
+        }
     }
 
     private static void httpGetToFile(Logger log, String url, Path out, String tokenOrNull) throws IOException {
@@ -312,7 +345,10 @@ public final class GitHubBuild {
         int code = conn.getResponseCode();
         if (code / 100 == 3) {
             String loc = conn.getHeaderField("Location");
-            if (loc != null) { conn.disconnect(); conn = open(loc, tokenOrNull); }
+            if (loc != null) {
+                conn.disconnect();
+                conn = open(loc, tokenOrNull);
+            }
         }
         int finalCode = conn.getResponseCode();
         if (finalCode != 200) throw new IOException("HTTP " + finalCode + " for " + url);
@@ -325,8 +361,13 @@ public final class GitHubBuild {
                 byte[] buf = new byte[8192];
                 int r;
                 while ((r = is.read(buf)) != -1) os.write(buf, 0, r);
-            } finally { os.close(); }
-        } finally { is.close(); conn.disconnect(); }
+            } finally {
+                os.close();
+            }
+        } finally {
+            is.close();
+            conn.disconnect();
+        }
     }
 
     private static HttpURLConnection open(String url, String tokenOrNull) throws IOException {
@@ -345,40 +386,61 @@ public final class GitHubBuild {
         byte[] buf = new byte[4096];
         int r;
         while ((r = is.read(buf)) != -1) baos.write(buf, 0, r);
-        return new String(baos.toByteArray(), "UTF-8");
+        return new String(baos.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private static void deleteRecursive(Path p) throws IOException {
         if (p == null || !Files.exists(p)) return;
         final List<Path> all = new ArrayList<Path>();
-        Files.walk(p).forEach(new java.util.function.Consumer<Path>() {
-            public void accept(Path x) { all.add(x); }
+        Files.walk(p).forEach(new Consumer<Path>() {
+            public void accept(Path x) {
+                all.add(x);
+            }
         });
         Collections.sort(all, new Comparator<Path>() {
-            public int compare(Path a, Path b) { return b.compareTo(a); }
+            public int compare(Path a, Path b) {
+                return b.compareTo(a);
+            }
         });
         for (int i = 0; i < all.size(); i++) {
-            try { Files.deleteIfExists(all.get(i)); } catch (IOException ignore) {}
+            try {
+                Files.deleteIfExists(all.get(i));
+            } catch (IOException ignore) {
+            }
         }
     }
 
     private static final class Repo {
         final String owner, name, branch;
-        Repo(String o, String n, String b) { owner = o; name = n; branch = b; }
-        Repo withBranch(String b) { return new Repo(owner, name, b); }
+
+        Repo(String o, String n, String b) {
+            owner = o;
+            name = n;
+            branch = b;
+        }
+
+        Repo withBranch(String b) {
+            return new Repo(owner, name, b);
+        }
 
         static Repo parse(String url) {
             String u = url.split("\\?")[0].split("#")[0];
             String[] parts = u.replace("https://", "").replace("http://", "").split("/");
             String owner = parts.length > 1 ? parts[1] : "";
-            String repo  = parts.length > 2 ? parts[2] : "";
+            String repo = parts.length > 2 ? parts[2] : "";
             return new Repo(owner, repo, "master");
         }
     }
 
     private static final class Pipe implements Runnable {
-        private final InputStream in; private final Logger log;
-        Pipe(InputStream in, Logger log) { this.in = in; this.log = log; }
+        private final InputStream in;
+        private final Logger log;
+
+        Pipe(InputStream in, Logger log) {
+            this.in = in;
+            this.log = log;
+        }
+
         public void run() {
             BufferedReader br = new BufferedReader(new InputStreamReader(in));
             try {
@@ -387,8 +449,12 @@ public final class GitHubBuild {
                     if (line != null && line.trim().length() != 0)
                         log.info("[AutoUpdatePlugins] [BUILD] " + line);
                 }
-            } catch (IOException ignore) {} finally {
-                try { br.close(); } catch (IOException ignore) {}
+            } catch (IOException ignore) {
+            } finally {
+                try {
+                    br.close();
+                } catch (IOException ignore) {
+                }
             }
         }
     }

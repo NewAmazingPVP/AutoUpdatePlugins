@@ -1,22 +1,21 @@
 package spigot;
 
+import common.ConfigManager;
 import common.PluginUpdater;
+import common.UpdateOptions;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.Bukkit;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
-import common.UpdateOptions;
-import common.ConfigManager;
-
-import org.bukkit.command.TabCompleter;
 import java.util.function.Supplier;
 
 public class AupCommand implements CommandExecutor, TabCompleter {
@@ -81,7 +80,10 @@ public class AupCommand implements CommandExecutor, TabCompleter {
             case "list":
                 int page = 1;
                 if (args.length >= 2) {
-                    try { page = Integer.parseInt(args[1]); } catch (NumberFormatException ignore) { }
+                    try {
+                        page = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException ignore) {
+                    }
                 }
                 listPlugins(sender, page);
                 break;
@@ -127,7 +129,10 @@ public class AupCommand implements CommandExecutor, TabCompleter {
     }
 
     private void reloadConfig(CommandSender sender) {
-        try { if (reloadAction != null) reloadAction.run(); } catch (Throwable ignored) {}
+        try {
+            if (reloadAction != null) reloadAction.run();
+        } catch (Throwable ignored) {
+        }
         sender.sendMessage(ChatColor.GREEN + "AutoUpdatePlugins configuration reloaded.");
     }
 
@@ -148,7 +153,8 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         UpdateOptions.debug = next;
         try {
             cfgMgr.setOption("behavior.debug", next);
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         sender.sendMessage(ChatColor.AQUA + "Debug is now " + (next ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
     }
 
@@ -192,7 +198,7 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         try {
             List<String> lines = Files.readAllLines(listFile.toPath(), StandardCharsets.UTF_8);
             boolean found = false;
-            for (Iterator<String> it = lines.iterator(); it.hasNext();) {
+            for (Iterator<String> it = lines.iterator(); it.hasNext(); ) {
                 String line = it.next();
                 String trimmed = line.trim();
                 boolean commented = trimmed.startsWith("#");
@@ -276,7 +282,8 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 String link = trimmed.substring(idx + 1).trim();
                 list.add(new PluginEntry(name, link, enabled));
             }
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
         Map<String, PluginEntry> map = new LinkedHashMap<>();
         for (PluginEntry e : list) {
             map.put(e.name, e);
@@ -297,6 +304,7 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         final String name;
         final String link;
         final boolean enabled;
+
         PluginEntry(String name, String link, boolean enabled) {
             this.name = name;
             this.link = link;
@@ -340,11 +348,13 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         try {
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
             return "folia";
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         try {
             String v = Bukkit.getVersion();
             if (v != null && v.toLowerCase().contains("folia")) return "folia";
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         return "paper";
     }
 }

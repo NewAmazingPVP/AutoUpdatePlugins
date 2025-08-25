@@ -1,11 +1,12 @@
 package bungeecord;
 
+import common.ConfigManager;
 import common.PluginUpdater;
+import common.UpdateOptions;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.CommandSender;
 import net.md_5.bungee.api.plugin.Command;
 import net.md_5.bungee.api.plugin.TabExecutor;
-import net.md_5.bungee.config.Configuration;
 
 import java.io.File;
 import java.io.IOException;
@@ -17,10 +18,10 @@ public class AupCommand extends Command implements TabExecutor {
 
     private final PluginUpdater pluginUpdater;
     private final File listFile;
-    private final common.ConfigManager cfgMgr;
+    private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr, Runnable reloadAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction) {
         super("aup", "autoupdateplugins.manage", "autoupdateplugins");
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
@@ -69,7 +70,10 @@ public class AupCommand extends Command implements TabExecutor {
             case "list":
                 int page = 1;
                 if (args.length >= 2) {
-                    try { page = Integer.parseInt(args[1]); } catch (NumberFormatException ignore) { }
+                    try {
+                        page = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException ignore) {
+                    }
                 }
                 listPlugins(sender, page);
                 break;
@@ -116,12 +120,15 @@ public class AupCommand extends Command implements TabExecutor {
     }
 
     private void reloadConfig(CommandSender sender) {
-        try { if (reloadAction != null) reloadAction.run(); } catch (Throwable ignored) {}
+        try {
+            if (reloadAction != null) reloadAction.run();
+        } catch (Throwable ignored) {
+        }
         sender.sendMessage(ChatColor.GREEN + "AutoUpdatePlugins configuration reloaded.");
     }
 
     private void toggleDebug(CommandSender sender, String[] args) {
-        boolean current = common.UpdateOptions.debug;
+        boolean current = UpdateOptions.debug;
         if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
             sender.sendMessage(ChatColor.AQUA + "Debug is currently " + (current ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
             return;
@@ -134,7 +141,7 @@ public class AupCommand extends Command implements TabExecutor {
             sender.sendMessage(ChatColor.RED + "Usage: /aup debug <on|off|toggle|status>");
             return;
         }
-        common.UpdateOptions.debug = next;
+        UpdateOptions.debug = next;
         cfgMgr.setOption("behavior.debug", next);
         sender.sendMessage(ChatColor.AQUA + "Debug is now " + (next ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
     }
@@ -264,7 +271,8 @@ public class AupCommand extends Command implements TabExecutor {
                 String link = trimmed.substring(idx + 1).trim();
                 list.add(new PluginEntry(n, link, enabled));
             }
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
         Map<String, PluginEntry> map = new LinkedHashMap<>();
         for (PluginEntry e : list) {
             map.put(e.name, e);
@@ -316,6 +324,7 @@ public class AupCommand extends Command implements TabExecutor {
         final String name;
         final String link;
         final boolean enabled;
+
         PluginEntry(String name, String link, boolean enabled) {
             this.name = name;
             this.link = link;

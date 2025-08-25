@@ -1,11 +1,13 @@
 package common;
 
+import com.cronutils.model.Cron;
 import com.cronutils.model.CronType;
 import com.cronutils.model.definition.CronDefinition;
 import com.cronutils.model.definition.CronDefinitionBuilder;
 import com.cronutils.model.time.ExecutionTime;
 import com.cronutils.parser.CronParser;
 
+import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Optional;
@@ -26,7 +28,7 @@ public class CronScheduler {
         try {
             CronDefinition def = CronDefinitionBuilder.instanceDefinitionFor(CronType.UNIX);
             CronParser parser = new CronParser(def);
-            com.cronutils.model.Cron cron = parser.parse(cronExpression);
+            Cron cron = parser.parse(cronExpression);
             final ExecutionTime exec = ExecutionTime.forCron(cron);
             final ZoneId zone = ZoneId.of(timezoneId == null || timezoneId.isEmpty() ? "UTC" : timezoneId);
 
@@ -58,7 +60,7 @@ public class CronScheduler {
         ZonedDateTime now = ZonedDateTime.now(zone);
         Optional<ZonedDateTime> next = exec.nextExecution(now);
         if (next.isPresent()) {
-            long seconds = java.time.Duration.between(now, next.get()).getSeconds();
+            long seconds = Duration.between(now, next.get()).getSeconds();
             return Math.max(0, seconds);
         } else {
             logger.warning("Could not determine next cron execution for: " + expr);

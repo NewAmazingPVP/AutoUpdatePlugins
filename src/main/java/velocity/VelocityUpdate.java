@@ -1,6 +1,7 @@
 package velocity;
 
 import com.google.inject.Inject;
+import com.typesafe.config.Config;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.CommandSource;
@@ -10,21 +11,28 @@ import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
-import common.ConfigManager;
-import common.PluginUpdater;
-import common.UpdateOptions;
+import common.*;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import common.CronScheduler;
 
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.util.stream.Stream;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 @Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.0.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
@@ -51,20 +59,21 @@ public final class VelocityUpdate {
         appleyBehaviorConfig();
         logger.info("AutoUpdatePlugins configuration reloaded.");
     }
+
     private void handleUpdateFolder() {
         Path updateDir = dataDirectory.getParent().resolve("update");
         if (Files.isDirectory(updateDir)) {
             try (Stream<Path> stream = Files.list(updateDir)) {
                 stream.filter(path -> path.toString().toLowerCase().endsWith(".jar"))
-                      .forEach(jar -> {
-                          try {
-                              Path target = dataDirectory.getParent().resolve(jar.getFileName());
-                              Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
-                              System.out.println("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
-                          } catch (IOException e) {
-                              e.printStackTrace();
-                          }
-                      });
+                        .forEach(jar -> {
+                            try {
+                                Path target = dataDirectory.getParent().resolve(jar.getFileName());
+                                Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
+                                System.out.println("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        });
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -125,40 +134,48 @@ public final class VelocityUpdate {
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
-    private void applyHttpConfigVelocity(com.typesafe.config.Config config) {
+    private void applyHttpConfigVelocity(Config config) {
         try {
-            boolean sslVerify = config.hasPath("http.sslVerify") ? config.getBoolean("http.sslVerify") : true;
-            common.UpdateOptions.sslVerify = sslVerify;
+            boolean sslVerify = !config.hasPath("http.sslVerify") || config.getBoolean("http.sslVerify");
+            UpdateOptions.sslVerify = sslVerify;
             if (!sslVerify) {
-                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
-                        new javax.net.ssl.X509TrustManager() {
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                TrustManager[] trustAll = new TrustManager[]{
+                        new X509TrustManager() {
+                            public void checkClientTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public void checkServerTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
+                            }
                         }
                 };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new java.security.SecureRandom());
-                javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-                javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new SecureRandom());
+                HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+                HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
     private void applyHttpConfigFromCfg() {
         try {
             String userAgent = cfgMgr.getString("http.userAgent");
-            java.util.Map<String,String> headers = new java.util.HashMap<>();
-            java.util.List<java.util.Map<String,Object>> list =
-                    (java.util.List<java.util.Map<String,Object>>) cfgMgr.getList("http.headers");
+            Map<String, String> headers = new HashMap<>();
+            List<Map<String, Object>> list =
+                    (List<Map<String, Object>>) cfgMgr.getList("http.headers");
             if (list != null) {
-                for (java.util.Map<String,Object> m : list) {
+                for (Map<String, Object> m : list) {
                     Object n = m.get("name"), v = m.get("value");
                     if (n != null && v != null) headers.put(n.toString(), v.toString());
                 }
             }
-            common.PluginDownloader.setHttpHeaders(headers, userAgent);
-        } catch (Throwable ignored) {}
+            PluginDownloader.setHttpHeaders(headers, userAgent);
+        } catch (Throwable ignored) {
+        }
         try {
             String type = cfgMgr.getString("proxy.type");
             String host = cfgMgr.getString("proxy.host");
@@ -181,57 +198,66 @@ public final class VelocityUpdate {
                     System.clearProperty("socksProxyPort");
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         try {
             boolean sslVerify = cfgMgr.getBoolean("http.sslVerify");
-            common.UpdateOptions.sslVerify = sslVerify;
+            UpdateOptions.sslVerify = sslVerify;
             if (!sslVerify) {
-                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[] {
-                        new javax.net.ssl.X509TrustManager() {
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                TrustManager[] trustAll = new TrustManager[]{
+                        new X509TrustManager() {
+                            public void checkClientTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public void checkServerTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
+                            }
                         }
                 };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new java.security.SecureRandom());
-                javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-                javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new SecureRandom());
+                HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+                HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
     private void appleyBehaviorConfig() {
         try {
-            common.UpdateOptions.zipFileCheck = cfgMgr.getBoolean("behavior.zipFileCheck");
-            common.UpdateOptions.ignoreDuplicates = cfgMgr.getBoolean("behavior.ignoreDuplicates");
-            common.UpdateOptions.autoCompileEnable = cfgMgr.getBoolean("behavior.autoCompile.enable");
-            common.UpdateOptions.autoCompileWhenNoJarAsset = cfgMgr.getBoolean("behavior.autoCompile.whenNoJarAsset");
-            common.UpdateOptions.autoCompileBranchNewerMonths = cfgMgr.getInt("behavior.autoCompile.branchNewerMonths");
-            common.UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
-            common.UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
-            common.UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
-            common.UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
-            common.UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
-            common.UpdateOptions.filePath = cfgMgr.getString("paths.filePath");
-            common.UpdateOptions.maxParallel = Math.max(1, cfgMgr.getInt("performance.maxParallel"));
-            common.UpdateOptions.connectTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.connectTimeoutMs"));
-            common.UpdateOptions.readTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.readTimeoutMs"));
-            common.UpdateOptions.perDownloadTimeoutSec = Math.max(0, cfgMgr.getInt("performance.perDownloadTimeoutSec"));
-            common.UpdateOptions.maxRetries = Math.max(1, cfgMgr.getInt("performance.maxRetries"));
-            common.UpdateOptions.backoffBaseMs = Math.max(0, cfgMgr.getInt("performance.backoffBaseMs"));
-            common.UpdateOptions.backoffMaxMs = Math.max(common.UpdateOptions.backoffBaseMs, cfgMgr.getInt("performance.backoffMaxMs"));
-            common.UpdateOptions.maxPerHost = Math.max(1, cfgMgr.getInt("performance.maxPerHost"));
-            java.util.List<java.util.Map<String,Object>> uaList =
-                    (java.util.List<java.util.Map<String,Object>>) cfgMgr.getList("http.userAgents");
-            common.UpdateOptions.userAgents.clear();
+            UpdateOptions.zipFileCheck = cfgMgr.getBoolean("behavior.zipFileCheck");
+            UpdateOptions.ignoreDuplicates = cfgMgr.getBoolean("behavior.ignoreDuplicates");
+            UpdateOptions.autoCompileEnable = cfgMgr.getBoolean("behavior.autoCompile.enable");
+            UpdateOptions.autoCompileWhenNoJarAsset = cfgMgr.getBoolean("behavior.autoCompile.whenNoJarAsset");
+            UpdateOptions.autoCompileBranchNewerMonths = cfgMgr.getInt("behavior.autoCompile.branchNewerMonths");
+            UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
+            UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
+            UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
+            UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
+            UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
+            UpdateOptions.filePath = cfgMgr.getString("paths.filePath");
+            UpdateOptions.maxParallel = Math.max(1, cfgMgr.getInt("performance.maxParallel"));
+            UpdateOptions.connectTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.connectTimeoutMs"));
+            UpdateOptions.readTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.readTimeoutMs"));
+            UpdateOptions.perDownloadTimeoutSec = Math.max(0, cfgMgr.getInt("performance.perDownloadTimeoutSec"));
+            UpdateOptions.maxRetries = Math.max(1, cfgMgr.getInt("performance.maxRetries"));
+            UpdateOptions.backoffBaseMs = Math.max(0, cfgMgr.getInt("performance.backoffBaseMs"));
+            UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, cfgMgr.getInt("performance.backoffMaxMs"));
+            UpdateOptions.maxPerHost = Math.max(1, cfgMgr.getInt("performance.maxPerHost"));
+            List<Map<String, Object>> uaList =
+                    (List<Map<String, Object>>) cfgMgr.getList("http.userAgents");
+            UpdateOptions.userAgents.clear();
             if (uaList != null) {
-                for (java.util.Map<String,Object> m : uaList) {
+                for (Map<String, Object> m : uaList) {
                     Object v = m.get("ua");
-                    if (v != null) common.UpdateOptions.userAgents.add(v.toString());
+                    if (v != null) UpdateOptions.userAgents.add(v.toString());
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
     }
 
 
@@ -243,12 +269,17 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
         cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
-        cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
-        java.util.ArrayList<java.util.Map<String, String>> uas = new java.util.ArrayList<>();
-        java.util.HashMap<String, String> ua1 = new java.util.HashMap<>(); ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-        java.util.HashMap<String, String> ua2 = new java.util.HashMap<>(); ua2.put("ua", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
-        java.util.HashMap<String, String> ua3 = new java.util.HashMap<>(); ua3.put("ua", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/126.0");
-        uas.add(ua1); uas.add(ua2); uas.add(ua3);
+        cfgMgr.addDefault("http.headers", new ArrayList<>(), "Extra headers: list of {name, value}");
+        ArrayList<Map<String, String>> uas = new ArrayList<>();
+        HashMap<String, String> ua1 = new HashMap<>();
+        ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+        HashMap<String, String> ua2 = new HashMap<>();
+        ua2.put("ua", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
+        HashMap<String, String> ua3 = new HashMap<>();
+        ua3.put("ua", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/126.0");
+        uas.add(ua1);
+        uas.add(ua2);
+        uas.add(ua3);
         cfgMgr.addDefault("http.userAgents", uas, "Optional pool of User-Agents; rotates on retry");
 
         cfgMgr.addDefault("proxy.type", "DIRECT", "Proxy type: DIRECT | HTTP | SOCKS");
@@ -263,7 +294,7 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 4, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
-        
+
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
@@ -284,7 +315,7 @@ public final class VelocityUpdate {
     private Logger getLogger() {
         return logger;
     }
-    
+
 
     public class UpdateCommand implements SimpleCommand {
         @Override
