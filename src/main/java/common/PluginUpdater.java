@@ -10,6 +10,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.yaml.snakeyaml.Yaml;
 
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
@@ -30,10 +31,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
 
 public class PluginUpdater {
 
@@ -195,7 +198,7 @@ public class PluginUpdater {
     private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
         try {
             logger.info(entry.getKey() + " ---- " + entry.getValue());
-            String value = entry.getValue();
+            String value = entry.getValue().replace("dev.bukkit.org/projects", "www.curseforge.com/minecraft/bukkit-plugins");
 
             if (value.contains("blob.build")) {
                 return handleBlobBuild(value, key, entry);
@@ -207,8 +210,6 @@ public class PluginUpdater {
                 return handleGitHubDownload(key, entry, value);
             } else if (value.contains("https://ci.")) {
                 return handleJenkinsDownload(key, entry, value);
-            } else if (value.contains("https://dev.bukkit.org/")) {
-                return pluginDownloader.downloadPlugin(value + "/files/latest", entry.getKey(), key);
             } else if (value.contains("modrinth.com")) {
                 return handleModrinthDownload(platform, key, entry, value);
             } else if (value.contains("https://hangar.papermc.io/")) {
@@ -500,95 +501,186 @@ public class PluginUpdater {
         }
     }
 
-
+    @SuppressWarnings("ConstantConditions")
     private boolean handleCurseForgeDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
 
-            try {
-                Document doc = jsoup(value).get();
-                String filesPage = null;
-                for (Element a : doc.select("a[href]")) {
-                    String href = a.attr("abs:href");
-                    if (href.contains("/files")) {
-                        filesPage = href;
-                        break;
-                    }
-                }
-                String downloadUrl = null;
-                if (filesPage != null) {
-                    Document files = jsoup(filesPage).get();
-                    for (Element a : files.select("a[href]")) {
-                        String href = a.attr("abs:href");
-                        if (href.endsWith("/download")) {
-                            downloadUrl = href;
-                            break;
-                        }
-                    }
-                }
-                if (downloadUrl == null) {
-                    for (Element a : doc.select("a[href]")) {
-                        String href = a.attr("abs:href");
-                        if (href.endsWith("/download")) {
-                            downloadUrl = href;
-                            break;
-                        }
-                    }
-                }
-                if (downloadUrl != null) {
-                    return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
-                }
-            } catch (Throwable ignored) {
-            }
+            Function<String, String> extractSlug = (String url) -> {
+                try {
+                    Matcher m = Pattern
+                            .compile("/minecraft/[^/]+/([^/?#]+)", Pattern.CASE_INSENSITIVE)
+                            .matcher(new java.net.URL(url).getPath());
+                    if (m.find()) return m.group(1);
+                } catch (Throwable ignored) {}
+                return null;
+            };
 
+            Function<String, String> httpGet = (String url) -> {
+                HttpURLConnection conn = null;
+                try {
+                    int readTimeout = Math.max(15000, UpdateOptions.readTimeoutMs);
+                    int connectTimeout = Math.max(10000, Math.min(readTimeout, 15000));
 
-            try {
-                Document doc = jsoup(value).get();
-                String pid = null;
-                for (Element a : doc.select("a[data-project-id]")) {
-                    String v = a.attr("data-project-id");
-                    if (v != null && v.matches("\\d+")) {
-                        pid = v;
-                        break;
+                    URL u = new URL(url);
+                    conn = (HttpURLConnection) u.openConnection();
+
+                    if (conn instanceof HttpsURLConnection && !UpdateOptions.sslVerify) {
+                        try {
+                            TrustManager[] trustAll = new TrustManager[]{
+                                    new X509TrustManager() {
+                                        public void checkClientTrusted(X509Certificate[] c, String a) {}
+                                        public void checkServerTrusted(X509Certificate[] c, String a) {}
+                                        public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                                    }
+                            };
+                            SSLContext sc = SSLContext.getInstance("TLS");
+                            sc.init(null, trustAll, new java.security.SecureRandom());
+                            ((HttpsURLConnection) conn).setSSLSocketFactory(sc.getSocketFactory());
+                            ((HttpsURLConnection) conn).setHostnameVerifier((h, s) -> true);
+                        } catch (Throwable ignored) {}
                     }
-                }
-                if (pid == null) {
 
-                    String html = doc.outerHtml();
-                    Matcher m = Pattern.compile("data-project-id=\"(\\d+)\"").matcher(html);
-                    if (m.find()) pid = m.group(1);
-                }
-                if (pid != null) {
-                    String api = "https://api.curseforge.com/servermods/files?projectIds=" + pid;
-                    JsonNode arr = new ObjectMapper()
-                            .readTree(new URL(api).openStream());
-                    if (arr.isArray() && arr.size() > 0) {
-                        JsonNode best = null;
-                        long bestTs = Long.MIN_VALUE;
-                        for (JsonNode it : arr) {
-                            long ts = it.has("fileDate") ? it.get("fileDate").asLong() : (it.has("id") ? it.get("id").asLong() : -1L);
-                            if (ts > bestTs) {
-                                bestTs = ts;
-                                best = it;
+                    conn.setInstanceFollowRedirects(true);
+                    conn.setRequestMethod("GET");
+                    conn.setConnectTimeout(connectTimeout);
+                    conn.setReadTimeout(readTimeout);
+
+                    conn.setRequestProperty("User-Agent", PluginDownloader.getEffectiveUserAgent());
+                    conn.setRequestProperty("Accept", "application/json, text/html;q=0.9,*/*;q=0.8");
+                    conn.setRequestProperty("Accept-Encoding", "gzip");
+                    conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9");
+                    Map<String, String> extra = PluginDownloader.getExtraHeaders();
+                    if (extra != null) {
+                        for (Map.Entry<String, String> e2 : extra.entrySet()) {
+                            if (e2.getKey() != null && e2.getValue() != null) {
+                                conn.setRequestProperty(e2.getKey(), e2.getValue());
                             }
                         }
-                        if (best != null) {
-                            String dUrl = best.has("downloadUrl") ? best.get("downloadUrl").asText() : null;
-                            if (dUrl != null && !dUrl.isEmpty()) {
-                                return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
+                    }
+
+                    int code = conn.getResponseCode();
+                    InputStream raw = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+                    if (raw == null) {
+                        logger.info("[CF] HTTP " + code + " – " + url + " (no body)");
+                        return null;
+                    }
+
+                    String encoding = conn.getHeaderField("Content-Encoding");
+                    InputStream in = raw;
+                    try {
+                        if (encoding != null && encoding.toLowerCase(java.util.Locale.ROOT).contains("gzip")) {
+                            in = new GZIPInputStream(raw);
+                        } else {
+                            in = new java.io.PushbackInputStream(raw, 2);
+                            java.io.PushbackInputStream pb = (java.io.PushbackInputStream) in;
+                            int b1 = pb.read();
+                            int b2 = pb.read();
+                            if (b1 == 0x1f && b2 == 0x8b) {
+                                pb.unread(new byte[]{(byte)b1, (byte)b2});
+                                in = new java.util.zip.GZIPInputStream(pb);
+                            } else {
+                                pb.unread(new byte[]{(byte)b1, (byte)b2});
                             }
                         }
-                        JsonNode last = arr.get(arr.size() - 1);
-                        String dUrl = last.has("downloadUrl") ? last.get("downloadUrl").asText() : null;
-                        if (dUrl != null && !dUrl.isEmpty()) {
-                            return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
-                        }
+                    } catch (Throwable ignored) { in = raw; }
+
+                    String ctype = conn.getHeaderField("Content-Type");
+                    String charsetName = "UTF-8";
+                    if (ctype != null) {
+                        java.util.regex.Matcher m = java.util.regex.Pattern
+                                .compile("charset=([^;]+)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                                .matcher(ctype);
+                        if (m.find()) charsetName = m.group(1).trim();
                     }
+                    java.nio.charset.Charset cs;
+                    try { cs = java.nio.charset.Charset.forName(charsetName); }
+                    catch (Throwable t) { cs = java.nio.charset.StandardCharsets.UTF_8; }
+
+                    try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(in, cs))) {
+                        StringBuilder sb = new StringBuilder();
+                        char[] buf = new char[8192];
+                        int r;
+                        while ((r = br.read(buf)) != -1) sb.append(buf, 0, r);
+                        if (code < 200 || code >= 300) {
+                            logger.info("[CF] HTTP " + code + " body snippet: " + sb.substring(0, Math.min(sb.length(), 200)));
+                            return null;
+                        }
+                        return sb.toString();
+                    }
+                } catch (Throwable t) {
+                    logger.info("[CF] httpGet error for " + url + ": " + t.getMessage());
+                    return null;
+                } finally {
+                    if (conn != null) conn.disconnect();
                 }
-            } catch (Throwable ignored) {
+            };
+
+            String slug = extractSlug.apply(value);
+            if (slug == null || slug.isEmpty()) {
+                logger.info("[CF] Could not extract slug from URL: " + value);
+                return false;
             }
 
+            String projApi = "https://api.curseforge.com/servermods/projects?search=" +
+                    java.net.URLEncoder.encode(slug, java.nio.charset.StandardCharsets.UTF_8.name());
+            String projJson = httpGet.apply(projApi);
+            if (projJson == null || projJson.isEmpty()) {
+                logger.info("[CF] servermods projects search returned nothing for slug=" + slug);
+                return false;
+            }
+
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode projArr = om.readTree(projJson);
+            if (!projArr.isArray() || projArr.size() == 0) {
+                logger.info("[CF] No projects found for slug=" + slug);
+                return false;
+            }
+
+            String projectId = null;
+            for (com.fasterxml.jackson.databind.JsonNode p : projArr) {
+                String s = p.has("slug") ? p.get("slug").asText() : null;
+                if (slug.equalsIgnoreCase(s)) {
+                    projectId = p.get("id").asText();
+                    break;
+                }
+            }
+            if (projectId == null) {
+                projectId = projArr.get(0).get("id").asText();
+            }
+            logger.info("[CF] Resolved projectId=" + projectId + " via servermods projects search");
+
+            String filesApi = "https://api.curseforge.com/servermods/files?projectIds=" + projectId;
+            String filesJson = httpGet.apply(filesApi);
+            if (filesJson == null || filesJson.isEmpty()) {
+                logger.info("[CF] servermods files returned nothing for projectId=" + projectId);
+                return false;
+            }
+
+            com.fasterxml.jackson.databind.JsonNode filesArr = om.readTree(filesJson);
+            if (!filesArr.isArray() || filesArr.size() == 0) {
+                logger.info("[CF] No files for projectId=" + projectId);
+                return false;
+            }
+
+            com.fasterxml.jackson.databind.JsonNode latest = filesArr.get(filesArr.size() - 1);
+
+            String downloadUrl = latest.has("downloadUrl") ? latest.get("downloadUrl").asText() : null;
+            if (downloadUrl != null && !downloadUrl.isEmpty()) {
+                logger.info("[CF] Using LAST file downloadUrl from servermods: " + downloadUrl);
+                return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            }
+
+            String fileId = latest.has("id") ? latest.get("id").asText() : null;
+            if (fileId != null && !fileId.isEmpty()) {
+                String fallback = "https://www.curseforge.com/minecraft/bukkit-plugins/" + slug + "/download/" + fileId + "/file";
+                logger.info("[CF] Constructed redirect URL for LAST file: " + fallback);
+                return pluginDownloader.downloadPlugin(fallback, entry.getKey(), key);
+            }
+
+            logger.info("[CF] Could not determine a usable download URL from LAST file.");
             return false;
-        } catch (Exception e) {
+
+        } catch (Throwable e) {
             logger.info("Failed to parse CurseForge page: " + e.getMessage());
             return false;
         }
