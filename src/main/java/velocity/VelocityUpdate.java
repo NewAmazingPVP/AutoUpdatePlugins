@@ -55,8 +55,9 @@ public final class VelocityUpdate {
     private void reloadPluginConfig() {
         this.cfgMgr = new ConfigManager(dataDirectory.toFile(), "config.yml");
         generateOrUpdateConfig();
+        handleUpdateFolder();
         applyHttpConfigFromCfg();
-        appleyBehaviorConfig();
+        applyBehaviorConfig();
         logger.info("AutoUpdatePlugins configuration reloaded.");
     }
 
@@ -88,7 +89,7 @@ public final class VelocityUpdate {
         cfgMgr = new ConfigManager(dataDirectory.toFile(), "config.yml");
         generateOrUpdateConfig();
         applyHttpConfigFromCfg();
-        appleyBehaviorConfig();
+        applyBehaviorConfig();
         UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
         myFile = dataDirectory.resolve("list.yml").toFile();
         if (!myFile.exists()) {
@@ -226,7 +227,7 @@ public final class VelocityUpdate {
         }
     }
 
-    private void appleyBehaviorConfig() {
+    private void applyBehaviorConfig() {
         try {
             UpdateOptions.zipFileCheck = cfgMgr.getBoolean("behavior.zipFileCheck");
             UpdateOptions.ignoreDuplicates = cfgMgr.getBoolean("behavior.ignoreDuplicates");
