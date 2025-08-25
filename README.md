@@ -142,90 +142,118 @@
 > The plugin **adds new options automatically** without overwriting your comments. Below is the full schema with defaults and notes.
 
 ```yaml
-# Global update settings
+################################################################################
+# AutoUpdatePlugins — Main Configuration
+################################################################################
+
 updates:
-  # Time in minutes between update checks.
+  # How often to run plugin updates (minutes). Default: 120 (every 2 hours)
   interval: 120
-  # Time in seconds to delay the first update check after the server starts.
+
+  # Delay after server startup (seconds) before the first run. Default: 50
   bootTime: 50
 
-  # Schedule settings (overrides interval and bootTime when set)
+  # Schedule (experimental): Use a cron expression to control exactly when
+  # updates run. When set, this overrides both interval and bootTime.
+  # Examples:
+  #   Every day at 03:30: "30 3 * * *"
+  #   Every 15 minutes:   "*/15 * * * *"
+  #   At 5 past every hour on weekdays: "5 * * * 1-5"
   schedule:
-    # Cron expression for scheduling update checks. Leave blank to disable.
-    cron: ""
-    # Timezone for the cron expression (e.g., "America/New_York").
-    timezone: "UTC"
+    cron: ""         # Cron expression (UNIX 5-field). Leave blank to disable.
+    timezone: "UTC"  # Timezone for the cron schedule, e.g. "America/New_York"
 
-  # Optional GitHub token (PAT) to access Actions artifacts and avoid rate limits.
+  # Optional GitHub personal access token (PAT). Strongly recommended if you use
+  # many GitHub links to avoid API rate-limits when listing releases/artifacts.
+  # Scope: public_repo is enough for public repos.
+  # Generate a token: https://github.com/settings/tokens
   key:
 
-# HTTP client settings
+# HTTP configuration (optional)
 http:
-  # Custom User-Agent for HTTP requests.
+  # If blank, a rotating pool of realistic User-Agents will be used.
   userAgent: ""
-  # A list of custom headers to add to all HTTP requests.
+  # Extra request headers added to every request. Only add if you know you need it.
   headers: []
-  # A list of User-Agents to rotate through for each request.
+  # Verify TLS certificates (set to false to trust all; only if you must)
+  sslVerify: true
+  # Optional pool of User-Agents; the plugin will rotate between them to avoid
+  # strict CDNs blocking automation.
   userAgents:
     - { ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36" }
     - { ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15" }
     - { ua: "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0" }
 
-# Proxy settings
+# Proxy configuration (optional)
 proxy:
-  # Proxy type: DIRECT, HTTP, or SOCKS.
-  type: DIRECT
-  # Proxy host.
-  host: "127.0.0.1"
-  # Proxy port.
-  port: 7890
+  type: "NONE" # HTTP | SOCKS | (anything else = disabled)
+  host: "proxy.example"
+  port: 8080
 
-# Behavior settings
+# Behavior toggles
 behavior:
-  # Whether to check if the downloaded file is a valid ZIP file.
+  useUpdateFolder: true
+  # Open downloaded .jar/.zip to ensure integrity before install (recommended)
   zipFileCheck: true
-  # Whether to ignore downloading a new file if it has the same name and size as the existing file.
+  # Skip replacing an existing plugin if the new jar has the same MD5
   ignoreDuplicates: true
-  # Whether to allow pre-releases to be downloaded.
+  # Allow GitHub pre-releases by default for release queries.
   allowPreRelease: false
-  # Auto-compile settings for GitHub repositories.
+  # Enable source-build fallback for GitHub repositories.
   autoCompile:
-    # Whether to enable auto-compiling.
-    enable: true
-    # Whether to auto-compile when no JAR asset is found in the latest release.
-    whenNoJarAsset: true
-    # The number of months to check for newer commits on the default branch.
-    branchNewerMonths: 4
-  # Whether to enable debug mode.
+    enable: false
+    # Build when a release has no .jar asset (zip-only)
+    whenNoJarAsset: false
+    # Build from source if default branch is newer than latest (pre)release by N months
+    branchNewerMonths: 6
+  # Verbose debug logging. Toggle with /aup debug on|off
   debug: false
 
-# Path settings
+
+
+# Optional custom paths
 paths:
-  # The temporary path for downloading files. Leave blank to use the default path.
   tempPath: ''
-  # The path to the update folder. Leave blank to use the default path.
   updatePath: ''
-  # The path to the plugins folder. Leave blank to use the default path.
   filePath: ''
 
-# Performance settings
+# Performance and reliability options
 performance:
-  # The maximum number of parallel downloads.
+  # Maximum parallel downloads. Higher is faster but uses more IO/CPU.
+  # If set above CPU cores, it is clamped internally.
   maxParallel: 4
-  # The connection timeout in milliseconds.
+  # HTTP connect timeout in milliseconds per request.
   connectTimeoutMs: 10000
-  # The read timeout in milliseconds.
+  # HTTP read timeout in milliseconds per request.
   readTimeoutMs: 30000
-  # The timeout for each download in seconds. 0 to disable.
+  # Optional per-download hard timeout in seconds. 0 disables the cap.
   perDownloadTimeoutSec: 0
-  # The maximum number of retries for a failed download.
-  maxRetries: 4
-  # The base backoff delay in milliseconds.
+  # Retry behavior for transient HTTP errors (403/429/5xx)
+  maxRetries: 3
+  # Exponential backoff base and max delay in milliseconds between retries
   backoffBaseMs: 500
-  # The maximum backoff delay in milliseconds.
   backoffMaxMs: 5000
-  # The maximum number of connections per host.
+  # Limit concurrent downloads per host to avoid 429s and improve stability
   maxPerHost: 3
+
+# Plugins List Configuration
+# Edit the generated list.yml in this folder. Format:
+#   {FileSaveName}: {link.to.plugin}
+#
+# Example list.yml template: https://github.com/NewAmazingPVP/AutoUpdatePlugins/blob/main/list.yml
+# Examples:
+#   ViaVersion: "https://www.spigotmc.org/resources/viaversion.19254/"
+#   Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+#   EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
+#
+# Supported sources: GitHub (Releases & Actions), Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar,
+# BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, plus generic pages with direct .jar links.
+#
+# Tips:
+# - Select assets: append [N] to pick the Nth asset or use ?get=<regex> to match by filename.
+# - Pre-releases: set behavior.allowPreRelease: true or append ?prerelease=true on a GitHub link.
+# - Force source build from GitHub: append ?autobuild=true to a GitHub repo URL.
+
 ```
 
 **Key options explained**
