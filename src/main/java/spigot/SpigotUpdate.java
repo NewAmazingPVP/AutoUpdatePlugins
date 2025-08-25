@@ -258,9 +258,9 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("behavior.ignoreDuplicates", true, "Skip replace when MD5 is identical");
         cfgMgr.addDefault("behavior.allowPreRelease", false, "Allow GitHub pre-releases by default");
         cfgMgr.addDefault("behavior.debug", false, "Enable verbose debug logging (toggle via /aup debug)");
-        cfgMgr.addDefault("behavior.autoCompile.enable", true, "Enable source build fallback for GitHub");
+        cfgMgr.addDefault("behavior.autoCompile.enable", false, "Enable source build fallback for GitHub");
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
-        cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 4, "Build when default branch is newer by N months");
+        cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");

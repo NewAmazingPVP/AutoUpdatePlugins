@@ -28,7 +28,7 @@ public final class GitHubBuild {
         try {
             String u = repoUrl.toLowerCase(Locale.ROOT);
             if (!u.startsWith("https://github.com/") && !u.startsWith("http://github.com/")) {
-                log.warning("[AutoUpdatePlugins] [DEBUG] Invalid GitHub repository URL: " + repoUrl);
+                if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Invalid GitHub repository URL: " + repoUrl);
                 return false;
             }
             Repo ref = Repo.parse(repoUrl);
@@ -55,7 +55,7 @@ public final class GitHubBuild {
 
                 if (tryJitPackSmart(log, ref, outJar)) return true;
 
-                log.warning("[AutoUpdatePlugins] [DEBUG] No jar produced for " + repoUrl);
+                  if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] No jar produced for " + repoUrl);
                 return false;
             } finally {
                 try {
@@ -64,7 +64,7 @@ public final class GitHubBuild {
                 }
             }
         } catch (Exception e) {
-            log.warning("[AutoUpdatePlugins] [DEBUG] handleGitHubBuild error: " + e.getMessage());
+            if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] handleGitHubBuild error: " + e.getMessage());
             return false;
         }
     }
@@ -83,7 +83,8 @@ public final class GitHubBuild {
             if (e < 0) return null;
             String branch = json.substring(s, e).trim();
             if (branch.length() > 0) {
-                log.info("[AutoUpdatePlugins] [DEBUG] Default branch for " + ref.owner + "/" + ref.name + " = " + branch);
+                if (UpdateOptions.debug)
+                    log.info("[AutoUpdatePlugins] [DEBUG] Default branch for " + ref.owner + "/" + ref.name + " = " + branch);
                 return branch;
             }
         } catch (Exception ignore) {
@@ -95,16 +96,19 @@ public final class GitHubBuild {
         String api = "https://api.github.com/repos/" + ref.owner + "/" + ref.name + "/releases/latest";
         HttpURLConnection conn = open(api, token);
         if (conn.getResponseCode() != 200) {
-            log.info("[AutoUpdatePlugins] [DEBUG] No latest release (HTTP " + conn.getResponseCode() + ") for /" + ref.owner + "/" + ref.name);
+            if (UpdateOptions.debug)
+                log.info("[AutoUpdatePlugins] [DEBUG] No latest release (HTTP " + conn.getResponseCode() + ") for /" + ref.owner + "/" + ref.name);
             return false;
         }
         String json = readAll(conn.getInputStream());
         String jarUrl = findFirstJarUrl(json);
         if (jarUrl == null) {
-            log.info("[AutoUpdatePlugins] [DEBUG] No .jar asset in latest release for /" + ref.owner + "/" + ref.name);
+            if (UpdateOptions.debug)
+                log.info("[AutoUpdatePlugins] [DEBUG] No .jar asset in latest release for /" + ref.owner + "/" + ref.name);
             return false;
         }
-        log.info("[AutoUpdatePlugins] [DEBUG] Downloading GitHub release asset: " + jarUrl);
+        if (UpdateOptions.debug)
+            log.info("[AutoUpdatePlugins] [DEBUG] Downloading GitHub release asset: " + jarUrl);
         httpGetToFile(log, jarUrl, out, null);
         try {
             if (Files.size(out) < 10 * 1024) throw new IOException("Downloaded asset too small");
@@ -139,23 +143,23 @@ public final class GitHubBuild {
 
 
         if (Files.isRegularFile(gradlew)) {
-            log.info("[AutoUpdatePlugins] [DEBUG] Using Gradle wrapper: " + gradlew);
+            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Using Gradle wrapper: " + gradlew);
             if (runBuild(log, project, gradlew, Arrays.asList("build", "-x", "test"))) return true;
         }
 
         if (Files.isRegularFile(mvnw)) {
-            log.info("[AutoUpdatePlugins] [DEBUG] Using Maven wrapper: " + mvnw);
+            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Using Maven wrapper: " + mvnw);
             if (runBuild(log, project, mvnw, Arrays.asList("-q", "-DskipTests", "package"))) return true;
         }
 
         if (Files.isRegularFile(project.resolve("build.gradle")) || Files.isRegularFile(project.resolve("build.gradle.kts"))) {
             String gradleCmd = isWindows ? "gradle.bat" : "gradle";
-            log.info("[AutoUpdatePlugins] [DEBUG] Trying system Gradle: " + gradleCmd);
+            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Trying system Gradle: " + gradleCmd);
             if (runBuild(log, project, Paths.get(gradleCmd), Arrays.asList("build", "-x", "test"))) return true;
         }
         if (Files.isRegularFile(project.resolve("pom.xml"))) {
             String mvnCmd = isWindows ? "mvn.cmd" : "mvn";
-            log.info("[AutoUpdatePlugins] [DEBUG] Trying system Maven: " + mvnCmd);
+            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Trying system Maven: " + mvnCmd);
             return runBuild(log, project, Paths.get(mvnCmd), Arrays.asList("-q", "-DskipTests", "package"));
         }
         return false;
@@ -188,17 +192,17 @@ public final class GitHubBuild {
             boolean finished = p.waitFor(20, TimeUnit.MINUTES);
             if (!finished) {
                 p.destroyForcibly();
-                log.warning("[AutoUpdatePlugins] [DEBUG] Build timed out.");
+                if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Build timed out.");
                 return false;
             }
             int ec = p.exitValue();
             if (ec != 0) {
-                log.warning("[AutoUpdatePlugins] [DEBUG] Build exited with code " + ec);
+                if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Build exited with code " + ec);
                 return false;
             }
             return true;
         } catch (IOException | InterruptedException e) {
-            log.warning("[AutoUpdatePlugins] [DEBUG] Build failed to start: " + e.getMessage());
+            if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Build failed to start: " + e.getMessage());
             return false;
         }
     }
@@ -219,12 +223,12 @@ public final class GitHubBuild {
             if (jars.get(i).length() > best.length()) best = jars.get(i);
         }
         try {
-            log.info("[AutoUpdatePlugins] [DEBUG] Built jar selected: " + best.getAbsolutePath());
+            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Built jar selected: " + best.getAbsolutePath());
             Files.createDirectories(out.getParent());
             Files.copy(best.toPath(), out, StandardCopyOption.REPLACE_EXISTING);
             return true;
         } catch (IOException e) {
-            log.warning("[AutoUpdatePlugins] [DEBUG] Copy failed: " + e.getMessage());
+            if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Copy failed: " + e.getMessage());
             return false;
         }
     }
@@ -275,20 +279,20 @@ public final class GitHubBuild {
                     path = conv;
                 }
                 String jarUrl = base + path;
-                log.info("[AutoUpdatePlugins] [DEBUG] Trying JitPack jar: " + jarUrl);
+                if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Trying JitPack jar: " + jarUrl);
                 httpGetToFile(log, jarUrl, out, null);
                 if (Files.size(out) > 10 * 1024) return true;
             } catch (Exception ignore) {
             }
         }
-        log.info("[AutoUpdatePlugins] [DEBUG] JitPack fallback failed.");
+        if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] JitPack fallback failed.");
         return false;
     }
 
     private static boolean tryTriggerJitPack(Logger log, Repo ref, String ver) {
         String url = "https://jitpack.io/com/github/" + ref.owner + "/" + ref.name + "/" + ver + "/" + ref.name + "-" + ver + ".jar";
         try {
-            log.info("[AutoUpdatePlugins] [DEBUG] Triggering JitPack build: " + url);
+            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Triggering JitPack build: " + url);
             HttpURLConnection c = open(url, null);
             c.getResponseCode();
             return true;

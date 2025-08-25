@@ -1,5 +1,5 @@
 name: AutoUpdatePlugins
-version: '12.1.0'
+version: '12.1.1'
 main: bungeecord.BungeeUpdate
 authors: NewAmazingPVP
 description: Automatically updates any bungee plugin
