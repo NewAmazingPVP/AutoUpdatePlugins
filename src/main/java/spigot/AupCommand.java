@@ -318,7 +318,7 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("autoupdateplugins.manage")) {
             return completions;
         }
-        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable"};
+        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable", "debug"};
         if (args.length == 1) {
             String current = args[0].toLowerCase();
             for (String s : subs) {

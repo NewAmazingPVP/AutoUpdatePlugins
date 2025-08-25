@@ -295,7 +295,7 @@ public class AupCommand implements SimpleCommand {
             return completions;
         }
         String[] args = invocation.arguments();
-        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable"};
+        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable", "debug"};
         if (args.length == 0) {
             completions.addAll(Arrays.asList(subs));
         } else if (args.length == 1) {

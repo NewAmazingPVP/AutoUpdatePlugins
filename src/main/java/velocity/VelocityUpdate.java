@@ -1,7 +1,6 @@
 package velocity;
 
 import com.google.inject.Inject;
-import com.typesafe.config.Config;
 import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.command.CommandSource;
@@ -34,7 +33,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
-@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.0.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
+@Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.1.0", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
 
     private PluginUpdater pluginUpdater;
@@ -133,33 +132,6 @@ public final class VelocityUpdate {
 
         proxy.getScheduler().buildTask(this, () -> pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"))).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
-    }
-
-    private void applyHttpConfigVelocity(Config config) {
-        try {
-            boolean sslVerify = !config.hasPath("http.sslVerify") || config.getBoolean("http.sslVerify");
-            UpdateOptions.sslVerify = sslVerify;
-            if (!sslVerify) {
-                TrustManager[] trustAll = new TrustManager[]{
-                        new X509TrustManager() {
-                            public void checkClientTrusted(X509Certificate[] c, String a) {
-                            }
-
-                            public void checkServerTrusted(X509Certificate[] c, String a) {
-                            }
-
-                            public X509Certificate[] getAcceptedIssuers() {
-                                return new X509Certificate[0];
-                            }
-                        }
-                };
-                SSLContext sc = SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new SecureRandom());
-                HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-                HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
-            }
-        } catch (Throwable ignored) {
-        }
     }
 
     private void applyHttpConfigFromCfg() {
