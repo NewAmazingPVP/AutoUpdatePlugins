@@ -48,6 +48,7 @@
 * **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
 * **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset), `?prerelease=true`, `?autobuild=true` (force source build) to precisely target the artifact you want.
 * **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or existing values.
+* **HTTP flexibility.** Add custom headers, rotate User-Agents, and route through proxies when needed.
 * **Performance built-in.**
 
     * Fully **async** downloads; no main-thread stalls.
@@ -67,7 +68,7 @@
 | Source                | Release/Build Discovery | Notes / Selectors Supported                                |
 | --------------------- | ----------------------- | ---------------------------------------------------------- |
 | **GitHub**            | Releases & Actions      | `[N]`, `?get=regex`, `?prerelease=true`, `?autobuild=true` |
-| **Jenkins**           | Latest build artifacts  | `?get=regex`                                               |
+| **Jenkins**           | Latest build artifacts  | `[N]`, `?get=regex`                                        |
 | **SpigotMC (Spiget)** | Resource page URL       | Auto-resolves latest                                       |
 | **dev.bukkit**        | Project page            | Auto-resolves latest                                       |
 | **Modrinth**          | Project/version URL     | `?get=regex`                                               |
@@ -281,6 +282,8 @@ Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 ```
 
+> Comment out a line with `#` to temporarily disable an entry. The `/aup enable` and `/aup disable` commands toggle this for you.
+
 **Selectors you can use**
 
 * **`[N]`** — Select the **N-th** jar asset from a release/build page. Example: `.../Essentials[3]`
@@ -328,6 +331,7 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 * **`/aup add <name> <link>`** — Add a new entry to `list.yml`.
 * **`/aup remove <name>`** — Remove an entry from `list.yml`.
 * **`/aup list [page]`** — View the configured plugin list.
+* **`/aup debug <on|off|toggle|status>`** — Toggle verbose logging and persist the setting.
 * **`/aup enable|disable <name>`** — Toggle an entry (comment/uncomment in `list.yml`).
 
 ### Permissions
@@ -363,10 +367,12 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
   ```
   MyActionsPlugin: "https://github.com/Owner/MyActionsPlugin?autobuild=true"
   ```
-* **Jenkins (match shaded jar):**
+* **Jenkins (match shaded jar; select by index with `[N]`):**
 
   ```
   CoolThing: "https://ci.example.com/job/CoolThing/lastSuccessfulBuild/artifact/?get=.*-all\\.jar"
+  # second artifact
+  CoolThingAlt: "https://ci.example.com/job/CoolThing/lastSuccessfulBuild/artifact/[2]"
   ```
 * **SpigotMC (resource page):**
 
