@@ -1,21 +1,23 @@
 package spigot;
 
-import common.PluginUpdater;
+import common.*;
 import org.bukkit.Bukkit;
-import common.SchedulerAdapter;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
-import common.ConfigManager;
 import org.bukkit.plugin.java.JavaPlugin;
-import spigot.AupCommand;
-import common.UpdateOptions;
-import common.CronScheduler;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.IOException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +59,10 @@ public final class SpigotUpdate extends JavaPlugin {
     }
 
     private void reloadPluginConfig() {
-        try { this.reloadConfig(); } catch (Throwable ignored) {}
+        try {
+            this.reloadConfig();
+        } catch (Throwable ignored) {
+        }
         this.config = getConfig();
         this.cfgMgr = new ConfigManager(getDataFolder(), "config.yml");
         generateOrUpdateConfig();
@@ -103,8 +108,9 @@ public final class SpigotUpdate extends JavaPlugin {
                     }
                 }
             }
-            common.PluginDownloader.setHttpHeaders(headers, userAgent);
-        } catch (Throwable ignored) {}
+            PluginDownloader.setHttpHeaders(headers, userAgent);
+        } catch (Throwable ignored) {
+        }
 
         try {
             String type = config.getString("proxy.type");
@@ -128,25 +134,33 @@ public final class SpigotUpdate extends JavaPlugin {
                     System.clearProperty("socksProxyPort");
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         try {
             boolean sslVerify = config.getBoolean("http.sslVerify", true);
-            common.UpdateOptions.sslVerify = sslVerify;
+            UpdateOptions.sslVerify = sslVerify;
 
             if (!sslVerify) {
-                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
-                        new javax.net.ssl.X509TrustManager() {
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                TrustManager[] trustAll = new TrustManager[]{
+                        new X509TrustManager() {
+                            public void checkClientTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public void checkServerTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
+                            }
                         }
                 };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new java.security.SecureRandom());
-                javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-                javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new SecureRandom());
+                HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+                HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
     }
 
@@ -172,7 +186,7 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, config.getInt("performance.backoffMaxMs"));
             UpdateOptions.maxPerHost = Math.max(1, config.getInt("performance.maxPerHost"));
 
-            java.util.List<Map<String, Object>> uaList = (java.util.List<Map<String, Object>>) config.getList("http.userAgents");
+            List<Map<String, Object>> uaList = (List<Map<String, Object>>) config.getList("http.userAgents");
             UpdateOptions.userAgents.clear();
             if (uaList != null) {
                 for (Map<String, Object> m : uaList) {
@@ -181,8 +195,9 @@ public final class SpigotUpdate extends JavaPlugin {
                 }
             }
 
-            
-        } catch (Throwable ignored) {}
+
+        } catch (Throwable ignored) {
+        }
     }
 
     public class UpdateCommand implements CommandExecutor {
@@ -201,14 +216,16 @@ public final class SpigotUpdate extends JavaPlugin {
 
     private String serverPlatform() {
         try {
-            // Presence on Folia servers
+
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
             return "folia";
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         try {
             String v = Bukkit.getVersion();
             if (v != null && v.toLowerCase().contains("folia")) return "folia";
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         return "paper";
     }
 
@@ -220,12 +237,17 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
         cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
-        cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
-        java.util.ArrayList<Map<String, String>> uas = new java.util.ArrayList<>();
-        java.util.HashMap<String, String> ua1 = new java.util.HashMap<>(); ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-        java.util.HashMap<String, String> ua2 = new java.util.HashMap<>(); ua2.put("ua", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
-        java.util.HashMap<String, String> ua3 = new java.util.HashMap<>(); ua3.put("ua", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/126.0");
-        uas.add(ua1); uas.add(ua2); uas.add(ua3);
+        cfgMgr.addDefault("http.headers", new ArrayList<>(), "Extra headers: list of {name, value}");
+        ArrayList<Map<String, String>> uas = new ArrayList<>();
+        HashMap<String, String> ua1 = new HashMap<>();
+        ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+        HashMap<String, String> ua2 = new HashMap<>();
+        ua2.put("ua", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
+        HashMap<String, String> ua3 = new HashMap<>();
+        ua3.put("ua", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/126.0");
+        uas.add(ua1);
+        uas.add(ua2);
+        uas.add(ua3);
         cfgMgr.addDefault("http.userAgents", uas, "Optional pool of User-Agents; rotates on retry");
 
         cfgMgr.addDefault("proxy.type", "DIRECT", "Proxy type: DIRECT | HTTP | SOCKS");

@@ -5,6 +5,7 @@ import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class SchedulerAdapter {
 
@@ -23,15 +24,16 @@ public class SchedulerAdapter {
             Method runAtFixedRate = asyncSchedulerClass.getMethod(
                     "runAtFixedRate",
                     Class.forName("org.bukkit.plugin.Plugin"),
-                    java.util.function.Consumer.class,
+                    Consumer.class,
                     long.class,
                     long.class,
                     TimeUnit.class
             );
-            java.util.function.Consumer<Object> consumer = (ignored) -> task.run();
+            Consumer<Object> consumer = (ignored) -> task.run();
             runAtFixedRate.invoke(asyncScheduler, plugin, consumer, initialDelaySeconds, periodSeconds, TimeUnit.SECONDS);
             return;
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         long initialTicks = initialDelaySeconds * 20L;
         long periodTicks = periodSeconds * 20L;
@@ -47,14 +49,15 @@ public class SchedulerAdapter {
             Method runDelayed = asyncSchedulerClass.getMethod(
                     "runDelayed",
                     Class.forName("org.bukkit.plugin.Plugin"),
-                    java.util.function.Consumer.class,
+                    Consumer.class,
                     long.class,
                     TimeUnit.class
             );
-            java.util.function.Consumer<Object> consumer = (ignored) -> task.run();
+            Consumer<Object> consumer = (ignored) -> task.run();
             runDelayed.invoke(asyncScheduler, plugin, consumer, delaySeconds, TimeUnit.SECONDS);
             return;
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
 
         long delayTicks = delaySeconds * 20L;
         Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, task, delayTicks);

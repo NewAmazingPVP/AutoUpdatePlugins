@@ -30,7 +30,7 @@ http:
   # If blank, a rotating pool of realistic User-Agents will be used.
   userAgent: ""
   # Extra request headers added to every request. Only add if you know you need it.
-  headers: []
+  headers: [ ]
   # Verify TLS certificates (set to false to trust all; only if you must)
   sslVerify: true
   # Optional pool of User-Agents; the plugin will rotate between them to avoid
@@ -65,7 +65,7 @@ behavior:
   # Verbose debug logging. Toggle with /aup debug on|off
   debug: false
 
-  
+
 
 # Optional custom paths
 paths:

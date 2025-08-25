@@ -1,5 +1,10 @@
 package common;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
+
 public class UpdateOptions {
     public static boolean zipFileCheck = true;
     public static boolean ignoreDuplicates = true;
@@ -19,11 +24,12 @@ public class UpdateOptions {
     public static int maxRetries = 4;
     public static int backoffBaseMs = 500;
     public static int backoffMaxMs = 5000;
-    public static java.util.List<String> userAgents = new java.util.ArrayList<>();
+    public static List<String> userAgents = new ArrayList<>();
     public static boolean useUpdateFolder = true;
     public static int maxPerHost = 3;
-    public static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.Semaphore> hostSemaphores = new java.util.concurrent.ConcurrentHashMap<>();
-    
+    public static final ConcurrentHashMap<String, Semaphore> hostSemaphores = new ConcurrentHashMap<>();
 
-    private UpdateOptions() {}
+
+    private UpdateOptions() {
+    }
 }

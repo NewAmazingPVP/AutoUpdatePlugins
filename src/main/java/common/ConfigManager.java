@@ -48,10 +48,12 @@ public class ConfigManager {
                 }
                 return super.representScalar(tag, value, style);
             }
+
             @Override
             protected Node representMapping(Tag tag, Map<?, ?> mapping, FlowStyle flowStyle) {
                 return super.representMapping(tag, mapping, FlowStyle.BLOCK);
             }
+
             @Override
             protected Node representSequence(Tag tag, Iterable<?> sequence, FlowStyle flowStyle) {
                 return super.representSequence(tag, sequence, FlowStyle.BLOCK);
@@ -88,7 +90,7 @@ public class ConfigManager {
                 configMap = new LinkedHashMap<>();
             }
         } else {
-            // Fresh config; let callers add defaults before first save
+
             configMap = new LinkedHashMap<>();
         }
     }
@@ -104,7 +106,7 @@ public class ConfigManager {
         int indentLevel = 0;
         boolean seenFirstKey = false;
 
-        // Capture leading comments/header block (including blank lines) before first key
+
         StringBuilder header = new StringBuilder();
         int idx = 0;
         while (idx < lines.length) {
@@ -119,7 +121,7 @@ public class ConfigManager {
         if (header.length() > 0) {
             leadingComments = header.toString();
         }
-        // Continue scanning from idx for key-attached comments
+
         for (int j = idx; j < lines.length; j++) {
             String line = lines[j];
             String trimmed = line.trim();
@@ -137,8 +139,8 @@ public class ConfigManager {
                 if (!trimmed.isEmpty()) {
                     currentComment.append(line);
                 } else {
-                    // Preserve blank line within a comment block by emitting an empty line
-                    // (we already appended a newline above)
+
+
                 }
             } else if (trimmed.contains(":")) {
                 String key = trimmed.split(":", 2)[0].trim();
@@ -164,7 +166,7 @@ public class ConfigManager {
             }
         }
 
-        // Any dangling comments at end of file not attached to a key become trailing comments
+
         if (currentComment.length() > 0 && seenFirstKey) {
             trailingComments = currentComment.toString();
         }
@@ -499,7 +501,7 @@ public class ConfigManager {
     private LinkedHashMap<String, Object> toLinkedMap(Map<String, Object> map) {
         if (map == null) return new LinkedHashMap<>();
         if (map instanceof LinkedHashMap) {
-            // Ensure nested maps are also LinkedHashMap
+
             LinkedHashMap<String, Object> linked = (LinkedHashMap<String, Object>) map;
             for (Map.Entry<String, Object> e : new ArrayList<>(linked.entrySet())) {
                 if (e.getValue() instanceof Map) {

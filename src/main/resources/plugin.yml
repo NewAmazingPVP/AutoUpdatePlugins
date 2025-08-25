@@ -16,7 +16,7 @@ commands:
     description: Manage AutoUpdatePlugins
     usage: /aup <subcommand>
     permission: autoupdateplugins.manage
-    aliases: [autoupdateplugins]
+    aliases: [ autoupdateplugins ]
     default: op
 permissions:
   autoupdateplugins.update:

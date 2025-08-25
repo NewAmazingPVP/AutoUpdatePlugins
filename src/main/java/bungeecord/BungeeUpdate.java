@@ -1,18 +1,27 @@
 package bungeecord;
 
-import common.ConfigManager;
-import common.CronScheduler;
-import common.PluginUpdater;
-import common.UpdateOptions;
+import common.*;
 import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.CommandSender;
 import net.md_5.bungee.api.ProxyServer;
 import net.md_5.bungee.api.plugin.Command;
 import net.md_5.bungee.api.plugin.Plugin;
+import net.md_5.bungee.config.Configuration;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 public final class BungeeUpdate extends Plugin {
 
@@ -84,67 +93,67 @@ public final class BungeeUpdate extends Plugin {
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
-    private void applyHttpConfigBungee(net.md_5.bungee.config.Configuration config) {
+    private void applyHttpConfigBungee(Configuration config) {
         try {
             boolean sslVerify = config.getBoolean("http.sslVerify", true);
-            common.UpdateOptions.sslVerify = sslVerify;
+            UpdateOptions.sslVerify = sslVerify;
             if (!sslVerify) {
-                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
-                        new javax.net.ssl.X509TrustManager() {
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {
+                TrustManager[] trustAll = new TrustManager[]{
+                        new X509TrustManager() {
+                            public void checkClientTrusted(X509Certificate[] c, String a) {
                             }
 
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {
+                            public void checkServerTrusted(X509Certificate[] c, String a) {
                             }
 
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                                return new java.security.cert.X509Certificate[0];
+                            public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
                             }
                         }
                 };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new java.security.SecureRandom());
-                javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-                javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new SecureRandom());
+                HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+                HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
             }
         } catch (Throwable ignored) {
         }
     }
 
     private void handleUpdateFolder() {
-        java.nio.file.Path updateDir = getDataFolder().getParentFile().toPath().resolve("update");
-        if (java.nio.file.Files.isDirectory(updateDir)) {
-            try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(updateDir)) {
-                s.filter(p -> p.toString().toLowerCase(java.util.Locale.ROOT).endsWith(".jar"))
+        Path updateDir = getDataFolder().getParentFile().toPath().resolve("update");
+        if (Files.isDirectory(updateDir)) {
+            try (Stream<Path> s = Files.list(updateDir)) {
+                s.filter(p -> p.toString().toLowerCase(Locale.ROOT).endsWith(".jar"))
                         .forEach(jar -> {
                             try {
-                                java.nio.file.Path target = getDataFolder().getParentFile().toPath().resolve(jar.getFileName());
-                                java.nio.file.Files.move(jar, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                Path target = getDataFolder().getParentFile().toPath().resolve(jar.getFileName());
+                                Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
                                 getLogger().info("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
-                            } catch (java.io.IOException e) {
+                            } catch (IOException e) {
                                 e.printStackTrace();
                             }
                         });
-            } catch (java.io.IOException e) {
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
     }
 
-    // === New: HTTP/Proxy/TLS + headers/UA from cfgMgr (Bungee) ===
+
     private void applyHttpConfigFromCfg() {
         try {
             String userAgent = cfgMgr.getString("http.userAgent");
-            java.util.Map<String, String> headers = new java.util.HashMap<>();
-            java.util.List<java.util.Map<String, Object>> list =
-                    (java.util.List<java.util.Map<String, Object>>) cfgMgr.getList("http.headers");
+            Map<String, String> headers = new HashMap<>();
+            List<Map<String, Object>> list =
+                    (List<Map<String, Object>>) cfgMgr.getList("http.headers");
             if (list != null) {
-                for (java.util.Map<String, Object> m : list) {
+                for (Map<String, Object> m : list) {
                     Object n = m.get("name"), v = m.get("value");
                     if (n != null && v != null) headers.put(n.toString(), v.toString());
                 }
             }
-            common.PluginDownloader.setHttpHeaders(headers, userAgent);
+            PluginDownloader.setHttpHeaders(headers, userAgent);
         } catch (Throwable ignored) {
         }
         try {
@@ -173,25 +182,25 @@ public final class BungeeUpdate extends Plugin {
         }
         try {
             boolean sslVerify = cfgMgr.getBoolean("http.sslVerify");
-            common.UpdateOptions.sslVerify = sslVerify;
+            UpdateOptions.sslVerify = sslVerify;
             if (!sslVerify) {
-                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
-                        new javax.net.ssl.X509TrustManager() {
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {
+                TrustManager[] trustAll = new TrustManager[]{
+                        new X509TrustManager() {
+                            public void checkClientTrusted(X509Certificate[] c, String a) {
                             }
 
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {
+                            public void checkServerTrusted(X509Certificate[] c, String a) {
                             }
 
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                                return new java.security.cert.X509Certificate[0];
+                            public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
                             }
                         }
                 };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new java.security.SecureRandom());
-                javax.net.ssl.HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-                javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new SecureRandom());
+                HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+                HttpsURLConnection.setDefaultHostnameVerifier((h, s) -> true);
             }
         } catch (Throwable ignored) {
         }
@@ -200,32 +209,32 @@ public final class BungeeUpdate extends Plugin {
 
     private void applyBehaviorConfig() {
         try {
-            common.UpdateOptions.zipFileCheck = cfgMgr.getBoolean("behavior.zipFileCheck");
-            common.UpdateOptions.ignoreDuplicates = cfgMgr.getBoolean("behavior.ignoreDuplicates");
-            common.UpdateOptions.autoCompileEnable = cfgMgr.getBoolean("behavior.autoCompile.enable");
-            common.UpdateOptions.autoCompileWhenNoJarAsset = cfgMgr.getBoolean("behavior.autoCompile.whenNoJarAsset");
-            common.UpdateOptions.autoCompileBranchNewerMonths = cfgMgr.getInt("behavior.autoCompile.branchNewerMonths");
-            common.UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
-            common.UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
-            common.UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
-            common.UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
-            common.UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
-            common.UpdateOptions.filePath = cfgMgr.getString("paths.filePath");
-            common.UpdateOptions.maxParallel = Math.max(1, cfgMgr.getInt("performance.maxParallel"));
-            common.UpdateOptions.connectTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.connectTimeoutMs"));
-            common.UpdateOptions.readTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.readTimeoutMs"));
-            common.UpdateOptions.perDownloadTimeoutSec = Math.max(0, cfgMgr.getInt("performance.perDownloadTimeoutSec"));
-            common.UpdateOptions.maxRetries = Math.max(1, cfgMgr.getInt("performance.maxRetries"));
-            common.UpdateOptions.backoffBaseMs = Math.max(0, cfgMgr.getInt("performance.backoffBaseMs"));
-            common.UpdateOptions.backoffMaxMs = Math.max(common.UpdateOptions.backoffBaseMs, cfgMgr.getInt("performance.backoffMaxMs"));
-            common.UpdateOptions.maxPerHost = Math.max(1, cfgMgr.getInt("performance.maxPerHost"));
-            java.util.List<java.util.Map<String, Object>> uaList =
-                    (java.util.List<java.util.Map<String, Object>>) cfgMgr.getList("http.userAgents");
-            common.UpdateOptions.userAgents.clear();
+            UpdateOptions.zipFileCheck = cfgMgr.getBoolean("behavior.zipFileCheck");
+            UpdateOptions.ignoreDuplicates = cfgMgr.getBoolean("behavior.ignoreDuplicates");
+            UpdateOptions.autoCompileEnable = cfgMgr.getBoolean("behavior.autoCompile.enable");
+            UpdateOptions.autoCompileWhenNoJarAsset = cfgMgr.getBoolean("behavior.autoCompile.whenNoJarAsset");
+            UpdateOptions.autoCompileBranchNewerMonths = cfgMgr.getInt("behavior.autoCompile.branchNewerMonths");
+            UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
+            UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
+            UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
+            UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
+            UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
+            UpdateOptions.filePath = cfgMgr.getString("paths.filePath");
+            UpdateOptions.maxParallel = Math.max(1, cfgMgr.getInt("performance.maxParallel"));
+            UpdateOptions.connectTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.connectTimeoutMs"));
+            UpdateOptions.readTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.readTimeoutMs"));
+            UpdateOptions.perDownloadTimeoutSec = Math.max(0, cfgMgr.getInt("performance.perDownloadTimeoutSec"));
+            UpdateOptions.maxRetries = Math.max(1, cfgMgr.getInt("performance.maxRetries"));
+            UpdateOptions.backoffBaseMs = Math.max(0, cfgMgr.getInt("performance.backoffBaseMs"));
+            UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, cfgMgr.getInt("performance.backoffMaxMs"));
+            UpdateOptions.maxPerHost = Math.max(1, cfgMgr.getInt("performance.maxPerHost"));
+            List<Map<String, Object>> uaList =
+                    (List<Map<String, Object>>) cfgMgr.getList("http.userAgents");
+            UpdateOptions.userAgents.clear();
             if (uaList != null) {
-                for (java.util.Map<String, Object> m : uaList) {
+                for (Map<String, Object> m : uaList) {
                     Object v = m.get("ua");
-                    if (v != null) common.UpdateOptions.userAgents.add(v.toString());
+                    if (v != null) UpdateOptions.userAgents.add(v.toString());
                 }
             }
         } catch (Throwable ignored) {
@@ -240,13 +249,13 @@ public final class BungeeUpdate extends Plugin {
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
 
         cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
-        cfgMgr.addDefault("http.headers", new java.util.ArrayList<>(), "Extra headers: list of {name, value}");
-        java.util.ArrayList<java.util.Map<String, String>> uas = new java.util.ArrayList<>();
-        java.util.HashMap<String, String> ua1 = new java.util.HashMap<>();
+        cfgMgr.addDefault("http.headers", new ArrayList<>(), "Extra headers: list of {name, value}");
+        ArrayList<Map<String, String>> uas = new ArrayList<>();
+        HashMap<String, String> ua1 = new HashMap<>();
         ua1.put("ua", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-        java.util.HashMap<String, String> ua2 = new java.util.HashMap<>();
+        HashMap<String, String> ua2 = new HashMap<>();
         ua2.put("ua", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
-        java.util.HashMap<String, String> ua3 = new java.util.HashMap<>();
+        HashMap<String, String> ua3 = new HashMap<>();
         ua3.put("ua", "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/126.0");
         uas.add(ua1);
         uas.add(ua2);

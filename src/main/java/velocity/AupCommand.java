@@ -2,7 +2,9 @@ package velocity;
 
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
+import common.ConfigManager;
 import common.PluginUpdater;
+import common.UpdateOptions;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
@@ -16,10 +18,10 @@ public class AupCommand implements SimpleCommand {
 
     private final PluginUpdater pluginUpdater;
     private final File listFile;
-    private final common.ConfigManager cfgMgr;
+    private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, common.ConfigManager cfgMgr, Runnable reloadAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
@@ -70,7 +72,10 @@ public class AupCommand implements SimpleCommand {
             case "list":
                 int page = 1;
                 if (args.length >= 2) {
-                    try { page = Integer.parseInt(args[1]); } catch (NumberFormatException ignored) { }
+                    try {
+                        page = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException ignored) {
+                    }
                 }
                 listPlugins(source, page);
                 break;
@@ -117,12 +122,15 @@ public class AupCommand implements SimpleCommand {
     }
 
     private void reloadConfig(CommandSource source) {
-        try { if (reloadAction != null) reloadAction.run(); } catch (Throwable ignored) {}
+        try {
+            if (reloadAction != null) reloadAction.run();
+        } catch (Throwable ignored) {
+        }
         source.sendMessage(Component.text("AutoUpdatePlugins configuration reloaded.").color(NamedTextColor.GREEN));
     }
 
     private void toggleDebug(CommandSource sender, String[] args) {
-        boolean current = common.UpdateOptions.debug;
+        boolean current = UpdateOptions.debug;
         if (args.length == 0 || "status".equalsIgnoreCase(args[0])) {
             sender.sendMessage(Component.text("Debug is currently ").color(NamedTextColor.AQUA).append(Component.text(current ? "ON" : "OFF").color(current ? NamedTextColor.GREEN : NamedTextColor.RED)));
             return;
@@ -135,7 +143,7 @@ public class AupCommand implements SimpleCommand {
             sender.sendMessage(Component.text("Usage: /aup debug <on|off|toggle|status>").color(NamedTextColor.RED));
             return;
         }
-        common.UpdateOptions.debug = next;
+        UpdateOptions.debug = next;
         cfgMgr.setOption("behavior.debug", next);
         sender.sendMessage(Component.text("Debug is now ").color(NamedTextColor.AQUA).append(Component.text(next ? "ON" : "OFF").color(next ? NamedTextColor.GREEN : NamedTextColor.RED)));
     }
@@ -261,7 +269,8 @@ public class AupCommand implements SimpleCommand {
                 String link = trimmed.substring(idx + 1).trim();
                 list.add(new PluginEntry(n, link, enabled));
             }
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
         Map<String, PluginEntry> map = new LinkedHashMap<>();
         for (PluginEntry e : list) {
             map.put(e.name, e);
@@ -317,6 +326,7 @@ public class AupCommand implements SimpleCommand {
         final String name;
         final String link;
         final boolean enabled;
+
         PluginEntry(String name, String link, boolean enabled) {
             this.name = name;
             this.link = link;

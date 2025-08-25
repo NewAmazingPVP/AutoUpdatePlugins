@@ -4,34 +4,36 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.jetbrains.annotations.NotNull;
-import org.yaml.snakeyaml.Yaml;
-
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.StreamSupport;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
+import org.yaml.snakeyaml.Yaml;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import javax.xml.bind.DatatypeConverter;
+import java.io.*;
+import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class PluginUpdater {
 
@@ -72,13 +74,13 @@ public class PluginUpdater {
                 logger.info("No data in file. Aborting readList operation.");
                 return;
             }
-            if (common.UpdateOptions.debug) {
-                logger.info("[DEBUG] Starting update run: entries=" + links.size() + ", parallel=" + Math.max(1, common.UpdateOptions.maxParallel));
+            if (UpdateOptions.debug) {
+                logger.info("[DEBUG] Starting update run: entries=" + links.size() + ", parallel=" + Math.max(1, UpdateOptions.maxParallel));
             }
-            int parallel = Math.max(1, common.UpdateOptions.maxParallel);
+            int parallel = Math.max(1, UpdateOptions.maxParallel);
             ExecutorService ex = createExecutor(parallel);
             currentExecutor = ex;
-            java.util.concurrent.Semaphore sem = new java.util.concurrent.Semaphore(parallel);
+            Semaphore sem = new Semaphore(parallel);
             List<Future<?>> futures = new ArrayList<>();
             for (Map.Entry<String, String> entry : links.entrySet()) {
                 futures.add(ex.submit(() -> {
@@ -97,42 +99,44 @@ public class PluginUpdater {
                         sem.release();
                     }
                     if (!ok) {
-                        if (common.UpdateOptions.debug) logger.info("[DEBUG] Download failed for " + entry.getKey() + " -> " + entry.getValue());
+                        if (UpdateOptions.debug)
+                            logger.info("[DEBUG] Download failed for " + entry.getKey() + " -> " + entry.getValue());
                         else logger.info("Download for " + entry.getKey() + " was not successful");
                     }
                 }));
             }
             ex.shutdown();
             try {
-                int cap = common.UpdateOptions.perDownloadTimeoutSec;
+                int cap = UpdateOptions.perDownloadTimeoutSec;
                 if (cap > 0) {
                     ex.awaitTermination(cap, TimeUnit.SECONDS);
                 } else {
                     ex.awaitTermination(7, TimeUnit.DAYS);
                 }
-            } catch (InterruptedException ignored) {}
+            } catch (InterruptedException ignored) {
+            }
 
-        }).whenComplete((v, t) -> { updating.set(false); cancelRequested.set(false); currentExecutor = null; });
+        }).whenComplete((v, t) -> {
+            updating.set(false);
+            cancelRequested.set(false);
+            currentExecutor = null;
+        });
     }
 
-    /**
-     * Update a single plugin using the same logic as {@link #readList(File, String, String)}.
-     *
-     * @param platform the server platform (paper, waterfall, velocity)
-     * @param key      optional GitHub token
-     * @param name     plugin name used for the output file
-     * @param link     download link as used in list.yml
-     */
+
     public void updatePlugin(String platform, String key, String name, String link) {
         CompletableFuture.runAsync(() -> {
             ExecutorService ex = createExecutor(1);
             try {
                 ex.submit(() -> {
-                    try { handleUpdateEntry(platform, key, new java.util.AbstractMap.SimpleEntry<>(name, link)); }
-                    catch (IOException e) { logger.warning("Download for " + name + " was not successful: " + e.getMessage()); }
+                    try {
+                        handleUpdateEntry(platform, key, new AbstractMap.SimpleEntry<>(name, link));
+                    } catch (IOException e) {
+                        logger.warning("Download for " + name + " was not successful: " + e.getMessage());
+                    }
                 }).get();
             } catch (Exception e) {
-                logger.log(java.util.logging.Level.SEVERE, "Error updating plugin " + name, e);
+                logger.log(Level.SEVERE, "Error updating plugin " + name, e);
             } finally {
                 ex.shutdownNow();
             }
@@ -146,7 +150,10 @@ public class PluginUpdater {
         cancelRequested.set(true);
         ExecutorService ex = currentExecutor;
         if (ex != null) {
-            try { ex.shutdownNow(); } catch (Throwable ignored) {}
+            try {
+                ex.shutdownNow();
+            } catch (Throwable ignored) {
+            }
         }
         logger.info("Stop requested for ongoing update run. In-flight downloads may finish or abort shortly.");
         return true;
@@ -154,13 +161,16 @@ public class PluginUpdater {
 
     private static Path decideInstallPath(String pluginName) {
         Path pluginsDir = Paths.get("plugins");
-        Path mainJar     = pluginsDir.resolve(pluginName + ".jar");
+        Path mainJar = pluginsDir.resolve(pluginName + ".jar");
 
         if (UpdateOptions.useUpdateFolder) {
             Path updateDir = (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty())
                     ? Paths.get(UpdateOptions.updatePath)
                     : pluginsDir.resolve("update");
-            try { Files.createDirectories(updateDir); } catch (Exception ignored) {}
+            try {
+                Files.createDirectories(updateDir);
+            } catch (Exception ignored) {
+            }
             Path updateJar = updateDir.resolve(pluginName + ".jar");
             return Files.exists(mainJar) ? updateJar : mainJar;
         } else {
@@ -171,7 +181,7 @@ public class PluginUpdater {
     private ExecutorService createExecutor(int parallelism) {
         try {
             Class<?> execs = Class.forName("java.util.concurrent.Executors");
-            java.lang.reflect.Method m = execs.getMethod("newVirtualThreadPerTaskExecutor");
+            Method m = execs.getMethod("newVirtualThreadPerTaskExecutor");
             Object svc = m.invoke(null);
             return (ExecutorService) svc;
         } catch (Throwable ignore) {
@@ -212,7 +222,8 @@ public class PluginUpdater {
             } else {
                 try {
                     if (pluginDownloader.downloadPlugin(value, entry.getKey(), key)) return true;
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                }
                 return handleGenericPageDownload(value, key, entry);
             }
         } catch (NullPointerException ignored) {
@@ -220,31 +231,38 @@ public class PluginUpdater {
         }
     }
 
-    private org.jsoup.Connection jsoup(String url) {
-        org.jsoup.Connection c = org.jsoup.Jsoup.connect(url)
-                .userAgent(common.PluginDownloader.getEffectiveUserAgent())
-                .timeout(Math.max(15000, common.UpdateOptions.readTimeoutMs))
+    private Connection jsoup(String url) {
+        Connection c = Jsoup.connect(url)
+                .userAgent(PluginDownloader.getEffectiveUserAgent())
+                .timeout(Math.max(15000, UpdateOptions.readTimeoutMs))
                 .followRedirects(true);
 
-        // apply extra headers
-        for (java.util.Map.Entry<String,String> e : common.PluginDownloader.getExtraHeaders().entrySet()) {
+
+        for (Map.Entry<String, String> e : PluginDownloader.getExtraHeaders().entrySet()) {
             c.header(e.getKey(), e.getValue());
         }
 
-        // Optional: per-request trust-all when sslVerify=false (works on modern jsoup)
-        if (!common.UpdateOptions.sslVerify) {
+
+        if (!UpdateOptions.sslVerify) {
             try {
-                javax.net.ssl.TrustManager[] trustAll = new javax.net.ssl.TrustManager[]{
-                        new javax.net.ssl.X509TrustManager() {
-                            public void checkClientTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public void checkServerTrusted(java.security.cert.X509Certificate[] c, String a) {}
-                            public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                TrustManager[] trustAll = new TrustManager[]{
+                        new X509TrustManager() {
+                            public void checkClientTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public void checkServerTrusted(X509Certificate[] c, String a) {
+                            }
+
+                            public X509Certificate[] getAcceptedIssuers() {
+                                return new X509Certificate[0];
+                            }
                         }
                 };
-                javax.net.ssl.SSLContext sc = javax.net.ssl.SSLContext.getInstance("TLS");
-                sc.init(null, trustAll, new java.security.SecureRandom());
+                SSLContext sc = SSLContext.getInstance("TLS");
+                sc.init(null, trustAll, new SecureRandom());
                 c.sslSocketFactory(sc.getSocketFactory());
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
         }
 
         return c;
@@ -351,7 +369,7 @@ public class PluginUpdater {
         return response.toString().trim();
     }
 
-    // File: src/main/java/common/PluginUpdater.java
+
     private boolean handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
         try {
             String[] parts = value.split("/");
@@ -360,40 +378,69 @@ public class PluginUpdater {
             if (qi != -1) last = last.substring(0, qi);
             String projectSlug = last;
 
-            // optional filename regex
+
             String getRegex = null;
             int qIndex = value.indexOf('?');
             if (qIndex != -1) getRegex = queryParam(value.substring(qIndex + 1), "get");
 
             String api = "https://api.modrinth.com/v2/project/" + projectSlug + "/version";
-            com.fasterxml.jackson.databind.JsonNode versions = new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readTree(new java.net.URL(api));
+            JsonNode versions = new ObjectMapper()
+                    .readTree(new URL(api));
 
-            for (com.fasterxml.jackson.databind.JsonNode version : versions) {
-                com.fasterxml.jackson.databind.JsonNode files = version.get("files");
+            for (JsonNode version : versions) {
+                JsonNode files = version.get("files");
                 if (files == null || !files.isArray()) continue;
 
-                boolean loaderOk = true; // default allow if no loader filter
+                boolean loaderOk = true;
                 if (version.has("loaders") && version.get("loaders").isArray() && platform != null && !platform.isEmpty()) {
                     loaderOk = false;
                     String p = platform.toLowerCase();
-                    for (com.fasterxml.jackson.databind.JsonNode l : version.get("loaders")) {
+                    for (JsonNode l : version.get("loaders")) {
                         String lv = l.asText("").toLowerCase();
-                        if (p.contains("paper")) { if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
-                        else if (p.contains("spigot") || p.contains("bukkit")) { if (lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
-                        else if (p.contains("folia")) { if (lv.contains("folia")) { loaderOk = true; break; } }
-                        else if (p.contains("velocity")) { if (lv.contains("velocity") || lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) { loaderOk = true; break; } }
-                        else if (p.contains("bungee")) { if (lv.contains("bungeecord") || lv.contains("bungee") || lv.contains("velocity")) { loaderOk = true; break; } }
-                        else { loaderOk = true; break; }
+                        if (p.contains("paper")) {
+                            if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
+                                loaderOk = true;
+                                break;
+                            }
+                        } else if (p.contains("spigot") || p.contains("bukkit")) {
+                            if (lv.contains("spigot") || lv.contains("bukkit")) {
+                                loaderOk = true;
+                                break;
+                            }
+                        } else if (p.contains("folia")) {
+                            if (lv.contains("folia")) {
+                                loaderOk = true;
+                                break;
+                            }
+                        } else if (p.contains("velocity")) {
+                            if (lv.contains("velocity") || lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
+                                loaderOk = true;
+                                break;
+                            }
+                        } else if (p.contains("bungee")) {
+                            if (lv.contains("bungeecord") || lv.contains("bungee") || lv.contains("velocity")) {
+                                loaderOk = true;
+                                break;
+                            }
+                        } else {
+                            loaderOk = true;
+                            break;
+                        }
                     }
                 }
                 if (!loaderOk) continue;
 
-                com.fasterxml.jackson.databind.JsonNode picked = null;
+                JsonNode picked = null;
                 if (getRegex != null && !getRegex.isEmpty()) {
-                    for (com.fasterxml.jackson.databind.JsonNode f : files) {
+                    for (JsonNode f : files) {
                         String fname = f.has("filename") ? f.get("filename").asText("") : "";
-                        try { if (fname.matches(getRegex)) { picked = f; break; } } catch (Throwable ignored) {}
+                        try {
+                            if (fname.matches(getRegex)) {
+                                picked = f;
+                                break;
+                            }
+                        } catch (Throwable ignored) {
+                        }
                     }
                 }
                 if (picked == null && files.size() > 0) picked = files.get(0);
@@ -409,7 +456,6 @@ public class PluginUpdater {
             return false;
         }
     }
-
 
 
     private boolean handleGuizhanssDownload(String value, String key, Map.Entry<String, String> entry) {
@@ -437,14 +483,14 @@ public class PluginUpdater {
                 return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
             }
 
-            org.jsoup.nodes.Document doc = jsoup(value).get();
-            for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
+            Document doc = jsoup(value).get();
+            for (Element a : doc.select("a[href]")) {
                 String href = a.attr("abs:href");
                 if (href.endsWith(".jar") || href.contains("/download") || href.contains("hangar.papermc.io") || href.contains("github.com")) {
                     if (href.endsWith(".jar")) {
                         return pluginDownloader.downloadPlugin(href, entry.getKey(), key);
                     }
-                    return handleUpdateEntry("paper", key, new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), href));
+                    return handleUpdateEntry("paper", key, new AbstractMap.SimpleEntry<>(entry.getKey(), href));
                 }
             }
             return false;
@@ -457,57 +503,73 @@ public class PluginUpdater {
 
     private boolean handleCurseForgeDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
-            // 1) Try HTML path (files -> download)
+
             try {
-                org.jsoup.nodes.Document doc = jsoup(value).get();
+                Document doc = jsoup(value).get();
                 String filesPage = null;
-                for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
+                for (Element a : doc.select("a[href]")) {
                     String href = a.attr("abs:href");
-                    if (href.contains("/files")) { filesPage = href; break; }
+                    if (href.contains("/files")) {
+                        filesPage = href;
+                        break;
+                    }
                 }
                 String downloadUrl = null;
                 if (filesPage != null) {
-                    org.jsoup.nodes.Document files = jsoup(filesPage).get();
-                    for (org.jsoup.nodes.Element a : files.select("a[href]")) {
+                    Document files = jsoup(filesPage).get();
+                    for (Element a : files.select("a[href]")) {
                         String href = a.attr("abs:href");
-                        if (href.endsWith("/download")) { downloadUrl = href; break; }
+                        if (href.endsWith("/download")) {
+                            downloadUrl = href;
+                            break;
+                        }
                     }
                 }
                 if (downloadUrl == null) {
-                    for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
+                    for (Element a : doc.select("a[href]")) {
                         String href = a.attr("abs:href");
-                        if (href.endsWith("/download")) { downloadUrl = href; break; }
+                        if (href.endsWith("/download")) {
+                            downloadUrl = href;
+                            break;
+                        }
                     }
                 }
                 if (downloadUrl != null) {
                     return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
 
-            // 2) Fallback like other.zip: legacy servermods API via data-project-id
+
             try {
-                org.jsoup.nodes.Document doc = jsoup(value).get();
+                Document doc = jsoup(value).get();
                 String pid = null;
-                for (org.jsoup.nodes.Element a : doc.select("a[data-project-id]")) {
+                for (Element a : doc.select("a[data-project-id]")) {
                     String v = a.attr("data-project-id");
-                    if (v != null && v.matches("\\d+")) { pid = v; break; }
+                    if (v != null && v.matches("\\d+")) {
+                        pid = v;
+                        break;
+                    }
                 }
                 if (pid == null) {
-                    // scan raw HTML if attribute on non-a elements
+
                     String html = doc.outerHtml();
-                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("data-project-id=\"(\\d+)\"").matcher(html);
+                    Matcher m = Pattern.compile("data-project-id=\"(\\d+)\"").matcher(html);
                     if (m.find()) pid = m.group(1);
                 }
                 if (pid != null) {
                     String api = "https://api.curseforge.com/servermods/files?projectIds=" + pid;
-                    com.fasterxml.jackson.databind.JsonNode arr = new com.fasterxml.jackson.databind.ObjectMapper()
-                            .readTree(new java.net.URL(api).openStream());
+                    JsonNode arr = new ObjectMapper()
+                            .readTree(new URL(api).openStream());
                     if (arr.isArray() && arr.size() > 0) {
-                        com.fasterxml.jackson.databind.JsonNode best = null;
+                        JsonNode best = null;
                         long bestTs = Long.MIN_VALUE;
-                        for (com.fasterxml.jackson.databind.JsonNode it : arr) {
+                        for (JsonNode it : arr) {
                             long ts = it.has("fileDate") ? it.get("fileDate").asLong() : (it.has("id") ? it.get("id").asLong() : -1L);
-                            if (ts > bestTs) { bestTs = ts; best = it; }
+                            if (ts > bestTs) {
+                                bestTs = ts;
+                                best = it;
+                            }
                         }
                         if (best != null) {
                             String dUrl = best.has("downloadUrl") ? best.get("downloadUrl").asText() : null;
@@ -515,14 +577,15 @@ public class PluginUpdater {
                                 return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
                             }
                         }
-                        com.fasterxml.jackson.databind.JsonNode last = arr.get(arr.size() - 1);
+                        JsonNode last = arr.get(arr.size() - 1);
                         String dUrl = last.has("downloadUrl") ? last.get("downloadUrl").asText() : null;
                         if (dUrl != null && !dUrl.isEmpty()) {
                             return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
                         }
                     }
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+            }
 
             return false;
         } catch (Exception e) {
@@ -535,12 +598,12 @@ public class PluginUpdater {
     private boolean handleGenericPageDownload(String value, String key, Map.Entry<String, String> entry) {
         try {
             try {
-                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL(value).openConnection();
+                HttpURLConnection conn = (HttpURLConnection) new URL(value).openConnection();
                 conn.setInstanceFollowRedirects(true);
-                conn.setConnectTimeout(Math.max(1000, common.UpdateOptions.connectTimeoutMs));
-                conn.setReadTimeout(Math.max(15000, common.UpdateOptions.readTimeoutMs));
-                conn.setRequestProperty("User-Agent", common.PluginDownloader.getEffectiveUserAgent());
-                for (java.util.Map.Entry<String,String> h : common.PluginDownloader.getExtraHeaders().entrySet()) {
+                conn.setConnectTimeout(Math.max(1000, UpdateOptions.connectTimeoutMs));
+                conn.setReadTimeout(Math.max(15000, UpdateOptions.readTimeoutMs));
+                conn.setRequestProperty("User-Agent", PluginDownloader.getEffectiveUserAgent());
+                for (Map.Entry<String, String> h : PluginDownloader.getExtraHeaders().entrySet()) {
                     conn.setRequestProperty(h.getKey(), h.getValue());
                 }
                 int code = conn.getResponseCode();
@@ -551,7 +614,8 @@ public class PluginUpdater {
                 if (code >= 200 && code < 300 && indicatesBinary) {
                     return pluginDownloader.downloadPlugin(value, entry.getKey(), key);
                 }
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+            }
 
             Document doc = jsoup(value).get();
             for (Element a : doc.select("a[href]")) {
@@ -560,7 +624,7 @@ public class PluginUpdater {
                     return pluginDownloader.downloadPlugin(href, entry.getKey(), key);
                 }
                 if (href.contains("github.com") || href.contains("modrinth.com") || href.contains("spigotmc.org") || href.contains("hangar.papermc.io") || href.contains("builds.guizhanss.com")) {
-                    return handleUpdateEntry("paper", key, new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), href));
+                    return handleUpdateEntry("paper", key, new AbstractMap.SimpleEntry<>(entry.getKey(), href));
                 }
             }
             return false;
@@ -640,7 +704,10 @@ public class PluginUpdater {
         try {
             String query = null;
             int qIdx = value.indexOf('?');
-            if (qIdx != -1) { query = value.substring(qIdx + 1); value = value.substring(0, qIdx); }
+            if (qIdx != -1) {
+                query = value.substring(qIdx + 1);
+                value = value.substring(0, qIdx);
+            }
 
             int artifactNum = 1;
             int lb = value.indexOf('['), rb = value.indexOf(']', lb + 1);
@@ -648,39 +715,50 @@ public class PluginUpdater {
 
             if (lb != -1 && rb != -1) {
                 String idxStr = value.substring(lb + 1, rb).trim();
-                try { artifactNum = Integer.parseInt(idxStr); } catch (NumberFormatException ignored) {}
+                try {
+                    artifactNum = Integer.parseInt(idxStr);
+                } catch (NumberFormatException ignored) {
+                }
                 if (artifactNum < 1) artifactNum = 1;
             }
 
             String repoPath = getGitHubRepoLocation(repoUrl);
             if (repoPath == null || repoPath.isEmpty()) {
                 logger.info("Repository path not found for: " + value);
-            try {
-                Path out = decideInstallPath(entry.getKey());
-                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
-                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                    return true;
+                try {
+                    Path out = decideInstallPath(entry.getKey());
+                    try {
+                        Files.createDirectories(out.getParent());
+                    } catch (Exception ignored) {
+                    }
+                    if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
                 }
-            } catch (Throwable ignored) { /* fall through to legacy builder */ }
-            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
 
             }
 
             String regex = queryParam(query, "get");
             String preParam = queryParam(query, "prerelease");
-            boolean allowPre = preParam != null ? Boolean.parseBoolean(preParam) : common.UpdateOptions.allowPreReleaseDefault;
+            boolean allowPre = preParam != null ? Boolean.parseBoolean(preParam) : UpdateOptions.allowPreReleaseDefault;
             String forceBuildParam = queryParam(query, "autobuild");
-            boolean forceBuild = forceBuildParam != null && Boolean.parseBoolean(forceBuildParam);
+            boolean forceBuild = Boolean.parseBoolean(forceBuildParam);
 
             if (forceBuild) {
                 try {
                     try {
                         Path out = decideInstallPath(entry.getKey());
-                        try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                        try {
+                            Files.createDirectories(out.getParent());
+                        } catch (Exception ignored) {
+                        }
                         if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
                             return true;
                         }
-                    } catch (Throwable ignored) { }
+                    } catch (Throwable ignored) {
+                    }
 
                     return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
                 } catch (IOException e) {
@@ -694,7 +772,7 @@ public class PluginUpdater {
             if (releases == null || !releases.isArray() || releases.size() == 0) {
                 JsonNode latest = fetchGithubJson("https://api.github.com/repos" + repoPath + "/releases/latest", key);
                 if (latest != null && latest.isObject()) {
-                    com.fasterxml.jackson.databind.node.ArrayNode arr = new com.fasterxml.jackson.databind.node.ArrayNode(new com.fasterxml.jackson.databind.ObjectMapper().getNodeFactory());
+                    ArrayNode arr = new ArrayNode(new ObjectMapper().getNodeFactory());
                     arr.add(latest);
                     releases = arr;
                 }
@@ -703,15 +781,16 @@ public class PluginUpdater {
             String downloadUrl = null;
             if (releases == null || releases.size() == 0) {
                 try {
-                    org.jsoup.nodes.Document doc = jsoup("https://github.com" + repoPath + "/releases").get();
-                    for (org.jsoup.nodes.Element a : doc.select("a[href]")) {
+                    Document doc = jsoup("https://github.com" + repoPath + "/releases").get();
+                    for (Element a : doc.select("a[href]")) {
                         String href = a.attr("abs:href");
                         if (href.contains("/releases/download/") && href.endsWith(".jar")) {
                             downloadUrl = href;
                             break;
                         }
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
 
             if (downloadUrl == null && releases != null && releases.size() > 0) {
@@ -743,61 +822,76 @@ public class PluginUpdater {
             }
 
             if (downloadUrl == null || downloadUrl.isEmpty()) {
-                if (common.UpdateOptions.debug) {
+                if (UpdateOptions.debug) {
                     logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — attempting source build.");
                 }
-            try {
-                Path out = decideInstallPath(entry.getKey());
-                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
-                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                    return true;
+                try {
+                    Path out = decideInstallPath(entry.getKey());
+                    try {
+                        Files.createDirectories(out.getParent());
+                    } catch (Exception ignored) {
+                    }
+                    if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
                 }
-            } catch (Throwable ignored) { /* fall through to legacy builder */ }
-            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
 
             }
 
             try {
                 boolean ok = pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
                 if (!ok) {
-                    if (common.UpdateOptions.debug) {
+                    if (UpdateOptions.debug) {
                         logger.info("[DEBUG] GitHub asset download failed, falling back to source build for " + repoPath);
                     }
-            try {
-                Path out = decideInstallPath(entry.getKey());
-                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
-                if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
-                    return true;
-                }
-            } catch (Throwable ignored) { /* fall through to legacy builder */ }
-            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+                    try {
+                        Path out = decideInstallPath(entry.getKey());
+                        try {
+                            Files.createDirectories(out.getParent());
+                        } catch (Exception ignored) {
+                        }
+                        if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
+                            return true;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
 
                 }
                 return true;
             } catch (Throwable t) {
-                if (common.UpdateOptions.debug) {
+                if (UpdateOptions.debug) {
                     logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
                             + " — falling back to source build for " + repoPath);
                 }
                 try {
                     Path out = decideInstallPath(entry.getKey());
-                    try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                    try {
+                        Files.createDirectories(out.getParent());
+                    } catch (Exception ignored) {
+                    }
                     if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
                         return true;
                     }
-                } catch (Throwable ignored) { /* fall through to legacy builder */ }
+                } catch (Throwable ignored) {
+                }
 
                 return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
 
             }
         } catch (Throwable t) {
-            if (common.UpdateOptions.debug) {
+            if (UpdateOptions.debug) {
                 logger.info("[DEBUG] handleGitHubDownload failed for " + value + " : " + t.getMessage()
                         + " — building from source as fallback.");
             }
             try {
                 Path out = decideInstallPath(entry.getKey());
-                try { Files.createDirectories(out.getParent()); } catch (Exception ignored) {}
+                try {
+                    Files.createDirectories(out.getParent());
+                } catch (Exception ignored) {
+                }
                 if (GitHubBuild.handleGitHubBuild(logger, value, out, key)) {
                     return true;
                 }
@@ -921,8 +1015,8 @@ public class PluginUpdater {
                 conn.setRequestProperty("Authorization", "Bearer " + token);
             }
             conn.setRequestProperty("Accept", "application/vnd.github+json");
-            conn.setConnectTimeout(common.UpdateOptions.connectTimeoutMs);
-            conn.setReadTimeout(common.UpdateOptions.readTimeoutMs);
+            conn.setConnectTimeout(UpdateOptions.connectTimeoutMs);
+            conn.setReadTimeout(UpdateOptions.readTimeoutMs);
             int code = conn.getResponseCode();
             if (code >= 400) {
                 return null;
@@ -957,7 +1051,7 @@ public class PluginUpdater {
         if (arr.isArray() && arr.size() > 0) {
             JsonNode commit = arr.get(0).get("commit");
             String date = commit.get("committer").get("date").asText();
-            return javax.xml.bind.DatatypeConverter.parseDateTime(date).getTimeInMillis();
+            return DatatypeConverter.parseDateTime(date).getTimeInMillis();
         }
         return 0L;
     }
@@ -967,7 +1061,7 @@ public class PluginUpdater {
         JsonNode r = releases.get(0);
         String date = r.has("published_at") ? r.get("published_at").asText() : r.path("created_at").asText();
         try {
-            return javax.xml.bind.DatatypeConverter.parseDateTime(date).getTimeInMillis();
+            return DatatypeConverter.parseDateTime(date).getTimeInMillis();
         } catch (Exception e) {
             return 0L;
         }
@@ -992,7 +1086,7 @@ public class PluginUpdater {
 
     private String decode(String s) {
         try {
-            return java.net.URLDecoder.decode(s, "UTF-8");
+            return URLDecoder.decode(s, "UTF-8");
         } catch (Exception ignored) {
             return s;
         }
