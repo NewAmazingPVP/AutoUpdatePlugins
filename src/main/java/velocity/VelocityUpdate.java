@@ -69,7 +69,7 @@ public final class VelocityUpdate {
                             try {
                                 Path target = dataDirectory.getParent().resolve(jar.getFileName());
                                 Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
-                                  logger.info("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
+                                logger.info("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }

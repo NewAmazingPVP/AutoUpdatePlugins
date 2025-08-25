@@ -28,7 +28,8 @@ public final class GitHubBuild {
         try {
             String u = repoUrl.toLowerCase(Locale.ROOT);
             if (!u.startsWith("https://github.com/") && !u.startsWith("http://github.com/")) {
-                if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Invalid GitHub repository URL: " + repoUrl);
+                if (UpdateOptions.debug)
+                    log.warning("[AutoUpdatePlugins] [DEBUG] Invalid GitHub repository URL: " + repoUrl);
                 return false;
             }
             Repo ref = Repo.parse(repoUrl);
@@ -55,7 +56,7 @@ public final class GitHubBuild {
 
                 if (tryJitPackSmart(log, ref, outJar)) return true;
 
-                  if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] No jar produced for " + repoUrl);
+                if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] No jar produced for " + repoUrl);
                 return false;
             } finally {
                 try {
@@ -64,7 +65,8 @@ public final class GitHubBuild {
                 }
             }
         } catch (Exception e) {
-            if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] handleGitHubBuild error: " + e.getMessage());
+            if (UpdateOptions.debug)
+                log.warning("[AutoUpdatePlugins] [DEBUG] handleGitHubBuild error: " + e.getMessage());
             return false;
         }
     }
@@ -202,7 +204,8 @@ public final class GitHubBuild {
             }
             return true;
         } catch (IOException | InterruptedException e) {
-            if (UpdateOptions.debug) log.warning("[AutoUpdatePlugins] [DEBUG] Build failed to start: " + e.getMessage());
+            if (UpdateOptions.debug)
+                log.warning("[AutoUpdatePlugins] [DEBUG] Build failed to start: " + e.getMessage());
             return false;
         }
     }
@@ -223,7 +226,8 @@ public final class GitHubBuild {
             if (jars.get(i).length() > best.length()) best = jars.get(i);
         }
         try {
-            if (UpdateOptions.debug) log.info("[AutoUpdatePlugins] [DEBUG] Built jar selected: " + best.getAbsolutePath());
+            if (UpdateOptions.debug)
+                log.info("[AutoUpdatePlugins] [DEBUG] Built jar selected: " + best.getAbsolutePath());
             Files.createDirectories(out.getParent());
             Files.copy(best.toPath(), out, StandardCopyOption.REPLACE_EXISTING);
             return true;
