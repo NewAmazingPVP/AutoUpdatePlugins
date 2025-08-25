@@ -42,7 +42,7 @@ http:
 
 # Proxy configuration (optional)
 proxy:
-  type: "HTTP" # HTTP | SOCKS | (anything else = disabled)
+  type: "NONE" # HTTP | SOCKS | (anything else = disabled)
   host: "proxy.example"
   port: 8080
 
