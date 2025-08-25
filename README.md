@@ -46,7 +46,7 @@
 ## Highlights
 
 * **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
-* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset), `?prerelease=true`, `?autobuild=true` (force source build) to precisely target the artifact you want.
+* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset — works for both GitHub and Jenkins artifacts), `?prerelease=true`, `?autobuild=true` (force source build) to precisely target the artifact you want.
 * **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or existing values.
 * **HTTP flexibility.** Add custom headers, rotate User-Agents, and route through proxies when needed.
 * **Performance built-in.**
@@ -58,6 +58,7 @@
 * **Flexible scheduling.** Interval + boot delay *or* cron with timezone support.
 * **Cross-platform.** Works on **Spigot**, **Paper**, **Folia**, **Velocity**, **BungeeCord**.
 * **Safe updates.** Download ➜ validate ➜ atomic replace, staged through temp/update paths.
+* **Integrity + dedupe.** Optional zip integrity checks and MD5 comparison skip corrupted or unchanged downloads.
 
 ---
 
@@ -80,6 +81,7 @@
 | **CurseForge**        | Project/files           | `?get=regex`                                               |
 | **Generic**           | Direct `.jar` link      | Exact file URL                                             |
 
+> **Note:** GitHub and Jenkins links both accept `[N]` to pick the **N-th** artifact on their release/build pages (1-indexed).
 > **Tip:** You can pass just the **project root URL** for most sources (e.g., a GitHub repo or Spigot resource page) and let AutoUpdatePlugins choose the latest artifact. Add selectors for precision.
 
 ### Server Platforms
@@ -264,6 +266,10 @@ performance:
 * **`http.userAgents`** — Simple rotation to avoid brittle server-side filters.
 * **`proxy`** — Full support for HTTP/SOCKS proxies.
 * **`behavior.autoCompile`** — For GitHub repos: if there’s no release jar (or if the branch is newer than the last release by `branchNewerMonths`), the repo can be **built from source** using Gradle/Maven.
+* **`behavior.zipFileCheck`** — Open downloaded jars/zips to ensure they aren't corrupt before install.
+* **`behavior.ignoreDuplicates`** — Skip replacing a plugin if the new jar has the same MD5.
+* **`behavior.useUpdateFolder`** — Stage new jars in the server’s `update/` directory for atomic swaps.
+* **`behavior.debug`** — Verbose logging toggle, also controllable via `/aup debug`.
 * **`paths`** — Customize temp/staging/output locations (falls back to sane defaults).
 * **`performance`** — See [Performance Tuning Guide](#performance-tuning-guide).
 
@@ -286,7 +292,7 @@ EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 
 **Selectors you can use**
 
-* **`[N]`** — Select the **N-th** jar asset from a release/build page. Example: `.../Essentials[3]`
+* **`[N]`** — Select the **N-th** jar asset (1-indexed) from a release or Jenkins build page. Example: `.../Essentials[3]`
 * **`?get=<regex>`** — Choose files whose names match a regex. Example: `?get=.*(paper|spigot).*\.jar`
 * **`?prerelease=true`** — Permit pre-releases.
 * **`?autobuild=true`** — Force a source build on GitHub even if a jar asset exists.
