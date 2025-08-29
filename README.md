@@ -19,6 +19,11 @@
 
 ---
 
+## Acknowledgements
+
+This is the original AutoUpdatePlugins project. There are several forks in the community; many of their good ideas and improvements have been incorporated here over time. Thanks especially to contributors and projects like ApliNi/AutoUpdatePlugins and others for inspiration and features.
+
+
 ## Table of Contents
 
 * [Highlights](#highlights)
