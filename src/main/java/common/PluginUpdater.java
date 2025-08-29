@@ -384,73 +384,97 @@ public class PluginUpdater {
             int qIndex = value.indexOf('?');
             if (qIndex != -1) getRegex = queryParam(value.substring(qIndex + 1), "get");
 
-            String api = "https://api.modrinth.com/v2/project/" + projectSlug + "/version";
-            JsonNode versions = new ObjectMapper()
-                    .readTree(new URL(api));
-
-            for (JsonNode version : versions) {
-                JsonNode files = version.get("files");
-                if (files == null || !files.isArray()) continue;
-
-                boolean loaderOk = true;
-                if (version.has("loaders") && version.get("loaders").isArray() && platform != null && !platform.isEmpty()) {
-                    loaderOk = false;
-                    String p = platform.toLowerCase();
-                    for (JsonNode l : version.get("loaders")) {
-                        String lv = l.asText("").toLowerCase();
-                        if (p.contains("paper")) {
-                            if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
-                                loaderOk = true;
-                                break;
-                            }
-                        } else if (p.contains("spigot") || p.contains("bukkit")) {
-                            if (lv.contains("spigot") || lv.contains("bukkit")) {
-                                loaderOk = true;
-                                break;
-                            }
-                        } else if (p.contains("folia")) {
-                            if (lv.contains("folia")) {
-                                loaderOk = true;
-                                break;
-                            }
-                        } else if (p.contains("velocity")) {
-                            if (lv.contains("velocity") || lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
-                                loaderOk = true;
-                                break;
-                            }
-                        } else if (p.contains("bungee")) {
-                            if (lv.contains("bungeecord") || lv.contains("bungee") || lv.contains("velocity")) {
-                                loaderOk = true;
-                                break;
-                            }
-                        } else {
-                            loaderOk = true;
-                            break;
-                        }
-                    }
-                }
-                if (!loaderOk) continue;
-
-                JsonNode picked = null;
-                if (getRegex != null && !getRegex.isEmpty()) {
-                    for (JsonNode f : files) {
-                        String fname = f.has("filename") ? f.get("filename").asText("") : "";
-                        try {
-                            if (fname.matches(getRegex)) {
-                                picked = f;
-                                break;
-                            }
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                }
-                if (picked == null && files.size() > 0) picked = files.get(0);
-
-                if (picked != null && picked.has("url")) {
-                    return pluginDownloader.downloadPlugin(picked.get("url").asText(), entry.getKey(), key);
+            boolean useRegex = getRegex != null && !getRegex.isEmpty();
+            Pattern getPattern = null;
+            if (useRegex) {
+                try {
+                    getPattern = Pattern.compile(getRegex);
+                } catch (Throwable e) {
+                    logger.info("Invalid get-regex for " + value + ": " + getRegex);
+                    return false;
                 }
             }
-            logger.info("Failed to pick Modrinth file for " + value);
+            
+            JsonNode fallbackFile = null;
+            ObjectMapper mapper = new ObjectMapper();
+            int offset = 0;
+            while (true) {
+                String api = "https://api.modrinth.com/v2/project/" + projectSlug + "/version?offset=" + offset + "&limit=100";
+                JsonNode versions = mapper.readTree(new URL(api));
+                if (versions == null || !versions.isArray() || versions.size() == 0) break;
+
+                for (JsonNode version : versions) {
+                    JsonNode files = version.get("files");
+                    if (files == null || !files.isArray()) continue;
+
+                    boolean loaderOk = true;
+                    if (version.has("loaders") && version.get("loaders").isArray() && platform != null && !platform.isEmpty()) {
+                        loaderOk = false;
+                        String p = platform.toLowerCase();
+                        for (JsonNode l : version.get("loaders")) {
+                            String lv = l.asText("").toLowerCase();
+                            if (p.contains("paper")) {
+                                if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
+                                    loaderOk = true;
+                                    break;
+                                }
+                            } else if (p.contains("spigot") || p.contains("bukkit")) {
+                                if (lv.contains("spigot") || lv.contains("bukkit")) {
+                                    loaderOk = true;
+                                    break;
+                                }
+                            } else if (p.contains("folia")) {
+                                if (lv.contains("folia")) {
+                                    loaderOk = true;
+                                    break;
+                                }
+                            } else if (p.contains("velocity")) {
+                                if (lv.contains("velocity") || lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
+                                    loaderOk = true;
+                                    break;
+                                }
+                            } else if (p.contains("bungee")) {
+                                if (lv.contains("bungeecord") || lv.contains("bungee") || lv.contains("velocity")) {
+                                    loaderOk = true;
+                                    break;
+                                }
+                            } else {
+                                loaderOk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!loaderOk) continue;
+
+                    if (useRegex) {
+                        for (JsonNode f : files) {
+                            String fname = f.has("filename") ? f.get("filename").asText("") : "";
+                            try {
+                                if (getPattern.matcher(fname).find()) {
+                                    if (f.has("url")) {
+                                        return pluginDownloader.downloadPlugin(f.get("url").asText(), entry.getKey(), key);
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    } else {
+                        if (fallbackFile == null && files.size() > 0 && files.get(0).has("url")) {
+                            fallbackFile = files.get(0);
+                        }
+                    }
+                }
+
+                offset += versions.size();
+            }
+            if (useRegex) {
+                logger.info("No Modrinth file matched get-regex for " + value + "; regex=" + getRegex);
+                return false;
+            }
+            if (fallbackFile != null) {
+                return pluginDownloader.downloadPlugin(fallbackFile.get("url").asText(), entry.getKey(), key);
+            }
+            logger.info("Failed to pick Modrinth file for " + value + ": no suitable files found.");
             return false;
         } catch (Exception e) {
             logger.info("Failed to download plugin from modrinth: " + e.getMessage());

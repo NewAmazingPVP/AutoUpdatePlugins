@@ -20,6 +20,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -91,13 +92,7 @@ public final class VelocityUpdate {
         applyBehaviorConfig();
         UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
         myFile = dataDirectory.resolve("list.yml").toFile();
-        if (!myFile.exists()) {
-            try {
-                myFile.createNewFile();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
+        ensureListFileWithExample(myFile);
         periodUpdatePlugins();
         CommandManager commandManager = proxy.getCommandManager();
         CommandMeta updateMeta = commandManager.metaBuilder("update").plugin(this).build();
@@ -105,6 +100,31 @@ public final class VelocityUpdate {
 
         CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
         commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig));
+    }
+
+    private void ensureListFileWithExample(File file) {
+        try {
+            boolean created = false;
+            if (!file.exists()) {
+                File parent = file.getParentFile();
+                if (parent != null && !parent.exists()) {
+                    parent.mkdirs();
+                }
+                created = file.createNewFile();
+            }
+            if (created || file.length() == 0) {
+                String example = "# Map plugin name to its update source URL\n"
+                        + "# Example entry:\n"
+                        + "AutoUpdatePlugins: \"https://github.com/NewAmazingPVP/AutoUpdatePlugins\"\n";
+
+                Path filePath = file.toPath();
+                Files.write(filePath, example.getBytes(StandardCharsets.UTF_8));
+
+                getLogger().info("Created example list.yml with a sample entry.");
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public void periodUpdatePlugins() {
