@@ -19,11 +19,6 @@
 
 ---
 
-## Acknowledgements
-
-This is the original AutoUpdatePlugins project. There are several forks in the community; many of their good ideas and improvements have been incorporated here over time. Thanks especially to contributors and projects like ApliNi/AutoUpdatePlugins and others for inspiration and features.
-
-
 ## Table of Contents
 
 * [Highlights](#highlights)
@@ -468,6 +463,12 @@ The built `.jar` will be in `target/`.
 * **Bugs / Feature requests:** Open an issue:
   [https://github.com/NewAmazingPVP/AutoUpdatePlugins/issues](https://github.com/NewAmazingPVP/AutoUpdatePlugins/issues)
 * PRs welcome! Please keep code style consistent and include a brief test plan in your PR description.
+
+---
+
+## Acknowledgements
+
+**This is the original AutoUpdatePlugins project.** There are several forks of this plugin in the community; many of their good ideas and improvements have been incorporated here over time as well. Thanks especially to contributors and projects like ApliNi/AutoUpdatePlugins and others for inspiration and features.
 
 ---
 
