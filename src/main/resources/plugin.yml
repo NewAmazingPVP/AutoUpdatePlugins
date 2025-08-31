@@ -1,5 +1,5 @@
 name: AutoUpdatePlugins
-version: '12.1.2'
+version: '12.1.3'
 main: spigot.SpigotUpdate
 api-version: 1.13
 folia-supported: true
