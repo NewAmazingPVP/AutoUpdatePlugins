@@ -394,7 +394,7 @@ public class PluginUpdater {
                     return false;
                 }
             }
-            
+
             JsonNode fallbackFile = null;
             ObjectMapper mapper = new ObjectMapper();
             int offset = 0;
