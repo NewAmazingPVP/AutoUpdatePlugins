@@ -163,6 +163,21 @@ public class PluginUpdater {
     }
 
     private static Path decideInstallPath(String pluginName) {
+        return decideInstallPath(pluginName, null);
+    }
+
+    private static Path decideInstallPath(String pluginName, String customPath) {
+        if (customPath != null && !customPath.trim().isEmpty()) {
+            String cp = sanitizeCustomPath(customPath);
+            if (cp != null && !cp.isEmpty()) {
+                Path dir = Paths.get(cp);
+                try {
+                    Files.createDirectories(dir);
+                } catch (Exception ignored) {
+                }
+                return dir.resolve(pluginName + ".jar");
+            }
+        }
         Path pluginsDir = Paths.get("plugins");
         Path mainJar = pluginsDir.resolve(pluginName + ".jar");
 
@@ -181,6 +196,36 @@ public class PluginUpdater {
         }
     }
 
+    private static String extractCustomPath(String raw) {
+        if (raw == null) return null;
+        int i = raw.indexOf('|');
+        if (i < 0) return null;
+        String tail = raw.substring(i + 1).trim();
+        return tail.isEmpty() ? null : tail;
+    }
+
+    private static String stripLinkPart(String raw) {
+        if (raw == null) return null;
+        int i = raw.indexOf('|');
+        return i < 0 ? raw.trim() : raw.substring(0, i).trim();
+    }
+
+    private static String sanitizeCustomPath(String cp) {
+        if (cp == null) return null;
+        cp = cp.trim();
+        while (cp.startsWith("/") || cp.startsWith("\\")) {
+            cp = cp.substring(1);
+        }
+        if (cp.matches("^[A-Za-z]:[\\/].*")) {
+            cp = cp.substring(2);
+            while (cp.startsWith("/") || cp.startsWith("\\")) {
+                cp = cp.substring(1);
+            }
+        }
+        return cp;
+    }
+
+
     private ExecutorService createExecutor(int parallelism) {
         try {
             Class<?> execs = Class.forName("java.util.concurrent.Executors");
@@ -198,7 +243,16 @@ public class PluginUpdater {
     private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
         try {
             logger.info(entry.getKey() + " ---- " + entry.getValue());
-            String value = entry.getValue().replace("dev.bukkit.org/projects", "www.curseforge.com/minecraft/bukkit-plugins");
+            String rawValue = entry.getValue();
+            String customPath = null;
+            String linkPart = rawValue;
+            int pipe = rawValue != null ? rawValue.indexOf('|') : -1;
+            if (pipe >= 0) {
+                linkPart = rawValue.substring(0, pipe).trim();
+                String tail = rawValue.substring(pipe + 1).trim();
+                if (!tail.isEmpty()) customPath = tail;
+            }
+            String value = linkPart.replace("dev.bukkit.org/projects", "www.curseforge.com/minecraft/bukkit-plugins");
 
             if (value.contains("blob.build")) {
                 return handleBlobBuild(value, key, entry);
@@ -222,7 +276,7 @@ public class PluginUpdater {
                 return handleCurseForgeDownload(value, key, entry);
             } else {
                 try {
-                    if (pluginDownloader.downloadPlugin(value, entry.getKey(), key)) return true;
+                    if (pluginDownloader.downloadPlugin(value, entry.getKey(), key, customPath)) return true;
                 } catch (IOException ignored) {
                 }
                 return handleGenericPageDownload(value, key, entry);
@@ -291,7 +345,8 @@ public class PluginUpdater {
             }
             JsonNode data = response.get("data");
             String downloadUrl = data.get("fileDownloadUrl").asText();
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (Exception e) {
             logger.info("Failed to download plugin from blob.build: " + e.getMessage());
             return false;
@@ -333,7 +388,8 @@ public class PluginUpdater {
         String lastBuild = buildsData.get("last_successful").asText();
         String downloadUrl = String.format("https://thebusybiscuit.github.io/builds/%s/%s/master/download/%s/%s-%s.jar", owner, repo, lastBuild, repo, lastBuild);
         try {
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from TheBusyBiscuit builds: " + e.getMessage());
             return false;
@@ -347,7 +403,8 @@ public class PluginUpdater {
             String projectName = parts[parts.length - 1];
             String latestVersion = getHangarLatestVersion(projectName);
             String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform.toUpperCase() + "/download";
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from hangar, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
@@ -452,7 +509,10 @@ public class PluginUpdater {
                             try {
                                 if (getPattern.matcher(fname).find()) {
                                     if (f.has("url")) {
-                                        return pluginDownloader.downloadPlugin(f.get("url").asText(), entry.getKey(), key);
+                                        {
+                                                                                String cp = extractCustomPath(entry.getValue());
+                                                                                return pluginDownloader.downloadPlugin(f.get("url").asText(), entry.getKey(), key, cp);
+                                                                            }
                                     }
                                 }
                             } catch (Throwable ignored) {
@@ -472,7 +532,8 @@ public class PluginUpdater {
                 return false;
             }
             if (fallbackFile != null) {
-                return pluginDownloader.downloadPlugin(fallbackFile.get("url").asText(), entry.getKey(), key);
+                String cp = extractCustomPath(entry.getValue());
+                return pluginDownloader.downloadPlugin(fallbackFile.get("url").asText(), entry.getKey(), key, cp);
             }
             logger.info("Failed to pick Modrinth file for " + value + ": no suitable files found.");
             return false;
@@ -493,7 +554,8 @@ public class PluginUpdater {
             String last = data.get("last_successful").asText();
             String jarName = repo + "-" + last + ".jar";
             String downloadUrl = String.format("https://builds.guizhanss.com/%s/%s/master/download/%s/%s", owner, repo, last, jarName);
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (Exception e) {
             logger.info("Failed to download from guizhanss builds: " + e.getMessage());
             return false;
@@ -505,7 +567,8 @@ public class PluginUpdater {
             if (value.contains("minebbs.com")) {
                 String base = value.replaceAll("/+$", "");
                 String dUrl = base + "/download";
-                return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key);
+                String cp = extractCustomPath(entry.getValue());
+                return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key, cp);
             }
 
             Document doc = jsoup(value).get();
@@ -513,9 +576,12 @@ public class PluginUpdater {
                 String href = a.attr("abs:href");
                 if (href.endsWith(".jar") || href.contains("/download") || href.contains("hangar.papermc.io") || href.contains("github.com")) {
                     if (href.endsWith(".jar")) {
-                        return pluginDownloader.downloadPlugin(href, entry.getKey(), key);
+                        String cp = extractCustomPath(entry.getValue());
+                        return pluginDownloader.downloadPlugin(href, entry.getKey(), key, cp);
                     }
-                    return handleUpdateEntry("paper", key, new AbstractMap.SimpleEntry<>(entry.getKey(), href));
+                    String cp = extractCustomPath(entry.getValue());
+                    String forward = (cp != null && !cp.isEmpty()) ? (href + " | " + cp) : href;
+                    return handleUpdateEntry("paper", key, new AbstractMap.SimpleEntry<>(entry.getKey(), forward));
                 }
             }
             return false;
@@ -704,14 +770,16 @@ public class PluginUpdater {
             String downloadUrl = latest.has("downloadUrl") ? latest.get("downloadUrl").asText() : null;
             if (downloadUrl != null && !downloadUrl.isEmpty()) {
                 logger.info("[CF] Using LAST file downloadUrl from servermods: " + downloadUrl);
-                return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+                String cp = extractCustomPath(entry.getValue());
+                return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
             }
 
             String fileId = latest.has("id") ? latest.get("id").asText() : null;
             if (fileId != null && !fileId.isEmpty()) {
                 String fallback = "https://www.curseforge.com/minecraft/bukkit-plugins/" + slug + "/download/" + fileId + "/file";
                 logger.info("[CF] Constructed redirect URL for LAST file: " + fallback);
-                return pluginDownloader.downloadPlugin(fallback, entry.getKey(), key);
+                String cp = extractCustomPath(entry.getValue());
+                return pluginDownloader.downloadPlugin(fallback, entry.getKey(), key, cp);
             }
 
             logger.info("[CF] Could not determine a usable download URL from LAST file.");
@@ -741,7 +809,8 @@ public class PluginUpdater {
                 boolean indicatesBinary = (ct != null && !ct.startsWith("text/") && !ct.contains("xml"))
                         || (cd != null && cd.toLowerCase().contains(".jar"));
                 if (code >= 200 && code < 300 && indicatesBinary) {
-                    return pluginDownloader.downloadPlugin(value, entry.getKey(), key);
+                    String cp = extractCustomPath(entry.getValue());
+                    return pluginDownloader.downloadPlugin(value, entry.getKey(), key, cp);
                 }
             } catch (IOException ignored) {
             }
@@ -750,10 +819,13 @@ public class PluginUpdater {
             for (Element a : doc.select("a[href]")) {
                 String href = a.attr("abs:href");
                 if (href.endsWith(".jar")) {
-                    return pluginDownloader.downloadPlugin(href, entry.getKey(), key);
+                    String cp = extractCustomPath(entry.getValue());
+                    return pluginDownloader.downloadPlugin(href, entry.getKey(), key, cp);
                 }
                 if (href.contains("github.com") || href.contains("modrinth.com") || href.contains("spigotmc.org") || href.contains("hangar.papermc.io") || href.contains("builds.guizhanss.com")) {
-                    return handleUpdateEntry("paper", key, new AbstractMap.SimpleEntry<>(entry.getKey(), href));
+                    String cp = extractCustomPath(entry.getValue());
+                    String forward = (cp != null && !cp.isEmpty()) ? (href + " | " + cp) : href;
+                    return handleUpdateEntry("paper", key, new AbstractMap.SimpleEntry<>(entry.getKey(), forward));
                 }
             }
             return false;
@@ -817,7 +889,8 @@ public class PluginUpdater {
         String artifactUrl = jenkinsLink + "lastSuccessfulBuild/artifact/" + artifactName;
 
         try {
-            return pluginDownloader.downloadPlugin(artifactUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(artifactUrl, entry.getKey(), key, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right " + "format?" + e.getMessage());
             return false;
@@ -936,7 +1009,8 @@ public class PluginUpdater {
             }
 
             try {
-                boolean ok = pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+                String cp = extractCustomPath(entry.getValue());
+                boolean ok = pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
                 if (!ok) {
                     if (UpdateOptions.debug) {
                         if (UpdateOptions.autoCompileEnable) {
@@ -1031,7 +1105,8 @@ public class PluginUpdater {
         }
 
         try {
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
             return false;
@@ -1042,7 +1117,8 @@ public class PluginUpdater {
         try {
             String pluginId = extractPluginIdFromLink(value);
             String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (Exception e) {
             logger.info("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
@@ -1052,7 +1128,8 @@ public class PluginUpdater {
     private boolean handleAlternateJenkinsDownload(String key, Map.Entry<String, String> entry, String value) {
         try {
             String downloadUrl = value + "lastSuccessfulBuild/artifact/*zip*/archive.zip";
-            return pluginDownloader.downloadJenkinsPlugin(downloadUrl, entry.getKey());
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.downloadJenkinsPlugin(downloadUrl, entry.getKey(), cp);
         } catch (Exception e) {
             logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
@@ -1152,7 +1229,8 @@ public class PluginUpdater {
             if (noJarAsset && !UpdateOptions.autoCompileWhenNoJarAsset) return false;
         }
         try {
-            Path out = decideInstallPath(entry.getKey());
+            String cp = extractCustomPath(entry.getValue());
+            Path out = decideInstallPath(entry.getKey(), cp);
             try {
                 Files.createDirectories(out.getParent());
             } catch (Exception ignored) {
@@ -1164,7 +1242,8 @@ public class PluginUpdater {
         }
         if (repoPath == null || repoPath.isEmpty()) return false;
         try {
-            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key);
+            String cp = extractCustomPath(entry.getValue());
+            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key, cp);
         } catch (IOException e) {
             if (UpdateOptions.debug) {
                 logger.info("[DEBUG] Source build failed for " + repoPath + ": " + e.getMessage());
