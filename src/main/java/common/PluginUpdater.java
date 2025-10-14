@@ -23,10 +23,12 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
@@ -1286,5 +1288,73 @@ public class PluginUpdater {
         } catch (Exception ignored) {
             return s;
         }
+    }
+    
+    public static void moveStagedUpdatesIfNeeded(Logger logger, String platform, Path pluginsDir, String configuredUpdatePath) {
+        if (!requiresManualUpdateMove(platform) || pluginsDir == null) {
+            return;
+        }
+
+        Path normalizedPluginsDir = pluginsDir.toAbsolutePath().normalize();
+        Set<Path> processed = new HashSet<>();
+        List<Path> candidates = new ArrayList<>();
+
+        if (configuredUpdatePath != null) {
+            String trimmed = configuredUpdatePath.trim();
+            if (!trimmed.isEmpty()) {
+                try {
+                    candidates.add(Paths.get(trimmed));
+                } catch (InvalidPathException ex) {
+                    if (logger != null) {
+                        logger.log(Level.WARNING, "[AutoUpdatePlugins] Invalid custom update path '" + trimmed + "': " + ex.getMessage());
+                    }
+                }
+            }
+        }
+
+        candidates.add(normalizedPluginsDir.resolve("update"));
+
+        for (Path path : candidates) {
+            if (path == null) continue;
+            Path updateDir = path.toAbsolutePath().normalize();
+            if (!processed.add(updateDir)) continue;
+            if (!Files.isDirectory(updateDir)) continue;
+
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(updateDir)) {
+                for (Path jar : stream) {
+                    if (!Files.isRegularFile(jar)) continue;
+
+                    String fileName = jar.getFileName() != null ? jar.getFileName().toString() : "";
+                    if (fileName.isEmpty() || !fileName.toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+
+                    Path target = normalizedPluginsDir.resolve(fileName);
+                    Path jarParent = jar.getParent() != null ? jar.getParent().toAbsolutePath().normalize() : null;
+                    if (jarParent != null && jarParent.equals(normalizedPluginsDir)) continue;
+
+                    try {
+                        Files.createDirectories(target.getParent());
+                        Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
+                        if (logger != null) {
+                            logger.info("[AutoUpdatePlugins] Updated " + fileName + " from update folder.");
+                        }
+                    } catch (IOException moveEx) {
+                        if (logger != null) {
+                            logger.log(Level.WARNING, "[AutoUpdatePlugins] Failed to move staged update " + jar + " -> " + target, moveEx);
+                        }
+                    }
+                }
+            } catch (IOException ex) {
+                if (logger != null) {
+                    logger.log(Level.WARNING, "[AutoUpdatePlugins] Failed to process update folder at " + updateDir, ex);
+                }
+            }
+        }
+    }
+
+    private static boolean requiresManualUpdateMove(String platform) {
+        if (platform == null) return false;
+        String normalized = platform.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) return false;
+        return normalized.contains("velocity") || normalized.contains("waterfall") || normalized.contains("bungee");
     }
 }

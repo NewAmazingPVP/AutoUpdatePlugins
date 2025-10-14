@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
@@ -32,7 +31,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
 
 @Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.1.3", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
 public final class VelocityUpdate {
@@ -62,23 +60,15 @@ public final class VelocityUpdate {
     }
 
     private void handleUpdateFolder() {
-        Path updateDir = dataDirectory.getParent().resolve("update");
-        if (Files.isDirectory(updateDir)) {
-            try (Stream<Path> stream = Files.list(updateDir)) {
-                stream.filter(path -> path.toString().toLowerCase().endsWith(".jar"))
-                        .forEach(jar -> {
-                            try {
-                                Path target = dataDirectory.getParent().resolve(jar.getFileName());
-                                Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
-                                logger.info("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        });
-            } catch (IOException e) {
-                e.printStackTrace();
+        Path pluginsDir = dataDirectory != null ? dataDirectory.getParent() : null;
+        String configuredUpdatePath = null;
+        if (cfgMgr != null) {
+            try {
+                configuredUpdatePath = cfgMgr.getString("paths.updatePath");
+            } catch (Throwable ignored) {
             }
         }
+        PluginUpdater.moveStagedUpdatesIfNeeded(logger, "velocity", pluginsDir, configuredUpdatePath);
     }
 
     @Subscribe

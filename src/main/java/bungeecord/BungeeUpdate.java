@@ -17,12 +17,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 public final class BungeeUpdate extends Plugin {
 
@@ -141,23 +139,17 @@ public final class BungeeUpdate extends Plugin {
     }
 
     private void handleUpdateFolder() {
-        Path updateDir = getDataFolder().getParentFile().toPath().resolve("update");
-        if (Files.isDirectory(updateDir)) {
-            try (Stream<Path> s = Files.list(updateDir)) {
-                s.filter(p -> p.toString().toLowerCase(Locale.ROOT).endsWith(".jar"))
-                        .forEach(jar -> {
-                            try {
-                                Path target = getDataFolder().getParentFile().toPath().resolve(jar.getFileName());
-                                Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
-                                getLogger().info("[AutoUpdatePlugins] Updated " + jar.getFileName() + " from update folder.");
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        });
-            } catch (IOException e) {
-                e.printStackTrace();
+        Path pluginsDir = getDataFolder() != null && getDataFolder().getParentFile() != null
+                ? getDataFolder().getParentFile().toPath()
+                : null;
+        String configuredUpdatePath = null;
+        if (cfgMgr != null) {
+            try {
+                configuredUpdatePath = cfgMgr.getString("paths.updatePath");
+            } catch (Throwable ignored) {
             }
         }
+        PluginUpdater.moveStagedUpdatesIfNeeded(getLogger(), "waterfall", pluginsDir, configuredUpdatePath);
     }
 
 
