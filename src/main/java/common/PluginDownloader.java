@@ -21,6 +21,7 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.nio.file.InvalidPathException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
@@ -126,6 +127,10 @@ public class PluginDownloader {
     }
 
     public boolean downloadPlugin(String link, String fileName, String githubToken) throws IOException {
+        return downloadPlugin(link, fileName, githubToken, null);
+    }
+
+    public boolean downloadPlugin(String link, String fileName, String githubToken, String customPath) throws IOException {
         String host = null;
         Semaphore hostSem = null;
         try {
@@ -145,7 +150,7 @@ public class PluginDownloader {
 
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
-        String outputFilePath = getString(fileName);
+        String outputFilePath = resolveOutputPath(fileName, customPath);
         String outputTempPath = outputFilePath + ".temp";
 
         try {
@@ -287,21 +292,16 @@ public class PluginDownloader {
         String configuredFilePath = UpdateOptions.filePath;
         String configuredUpdatePath = UpdateOptions.updatePath;
 
-
         if (configuredFilePath != null && !configuredFilePath.isEmpty()) {
             return ensureDir(configuredFilePath) + fileName + ".jar";
         }
 
-
         File mainJar = new File(basePlugins + fileName + ".jar");
 
-
         if (UpdateOptions.useUpdateFolder) {
-
             String updateDir = (configuredUpdatePath != null && !configuredUpdatePath.isEmpty())
                     ? ensureDir(configuredUpdatePath)
                     : ensureDir(basePlugins + "update/");
-
 
             if (mainJar.exists()) {
                 return updateDir + fileName + ".jar";
@@ -310,14 +310,61 @@ public class PluginDownloader {
             }
         }
 
-
         return basePlugins + fileName + ".jar";
     }
 
+    private String resolveOutputPath(String fileName, String customPath) {
+        if (customPath != null && !customPath.trim().isEmpty()) {
+            String cp = sanitizeCustomPath(customPath);
+            if (cp != null && !cp.isEmpty()) {
+                String dir = ensureDir(cp);
+                return dir + fileName + ".jar";
+            }
+        }
+        return getString(fileName);
+    }
+
+    private String sanitizeCustomPath(String cp) {
+        if (cp == null) return null;
+        cp = cp.trim();
+        if (cp.isEmpty()) return null;
+        cp = expandUserHome(cp);
+        try {
+            Path path = Paths.get(cp).normalize();
+            String normalized = path.toString();
+            return normalized.isEmpty() ? null : normalized;
+        } catch (InvalidPathException ex) {
+            if (UpdateOptions.debug) {
+                logger.info("[DEBUG] Ignoring custom path '" + cp + "' due to invalid path: " + ex.getMessage());
+            }
+            return null;
+        }
+    }
+
+    private String expandUserHome(String path) {
+        if (path == null || !path.startsWith("~")) {
+            return path;
+        }
+        String home = System.getProperty("user.home");
+        if (home == null || home.isEmpty()) {
+            return path;
+        }
+        if (path.equals("~")) {
+            return home;
+        }
+        if (path.startsWith("~/") || path.startsWith("~\\")) {
+            return home + path.substring(1);
+        }
+        return path;
+    }
+
     private String ensureDir(String dir) {
-        if (!dir.endsWith("/") && !dir.endsWith("\\")) dir = dir + "/";
-        new File(dir).mkdirs();
-        return dir;
+        if (dir == null || dir.isEmpty()) return dir;
+        File directory = new File(dir);
+        directory.mkdirs();
+        String path = directory.getPath();
+        if (!path.endsWith(File.separator)) path = path + File.separator;
+        return path;
     }
 
     private boolean downloadPluginToFile(String outputFilePath, HttpURLConnection connection) throws IOException {
@@ -354,9 +401,13 @@ public class PluginDownloader {
     }
 
     public boolean downloadJenkinsPlugin(String link, String fileName) {
+        return downloadJenkinsPlugin(link, fileName, null);
+    }
+
+    public boolean downloadJenkinsPlugin(String link, String fileName, String customPath) {
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
-        String outputFilePath = getString(fileName);
+        String outputFilePath = resolveOutputPath(fileName, customPath);
         String outputTempPath = outputFilePath + ".temp";
         HttpURLConnection seedConnection;
         try {
@@ -867,6 +918,10 @@ public class PluginDownloader {
 
 
     public boolean buildFromGitHubRepo(String repoPath, String fileName, String key) throws IOException {
+        return buildFromGitHubRepo(repoPath, fileName, key, null);
+    }
+
+    public boolean buildFromGitHubRepo(String repoPath, String fileName, String key, String customPath) throws IOException {
         if (repoPath == null || repoPath.isEmpty()) throw new IOException("Invalid repo path");
         if (UpdateOptions.debug) logger.info("[DEBUG] Starting GitHub build for " + repoPath);
 
@@ -982,7 +1037,8 @@ public class PluginDownloader {
         }
 
 
-        File out = new File("plugins/update/" + fileName + ".jar");
+        String outputFilePath = resolveOutputPath(fileName, customPath);
+        File out = new File(outputFilePath);
         if (UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
         copyFile(jar, out);
         return true;
