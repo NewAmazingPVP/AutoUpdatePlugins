@@ -21,6 +21,7 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.nio.file.InvalidPathException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
@@ -326,25 +327,44 @@ public class PluginDownloader {
     private String sanitizeCustomPath(String cp) {
         if (cp == null) return null;
         cp = cp.trim();
-        // Ignore any leading path separators so paths stay relative to the server root
-        while (cp.startsWith("/") || cp.startsWith("\\")) {
-            cp = cp.substring(1);
-        }
-        // If a Windows drive letter is supplied, strip it to keep path relative
-        // e.g., "C:\\Servers\\plugins" -> "Servers\\plugins"
-        if (cp.matches("^[A-Za-z]:[\\/].*")) {
-            cp = cp.substring(2);
-            while (cp.startsWith("/") || cp.startsWith("\\")) {
-                cp = cp.substring(1);
+        if (cp.isEmpty()) return null;
+        cp = expandUserHome(cp);
+        try {
+            Path path = Paths.get(cp).normalize();
+            String normalized = path.toString();
+            return normalized.isEmpty() ? null : normalized;
+        } catch (InvalidPathException ex) {
+            if (UpdateOptions.debug) {
+                logger.info("[DEBUG] Ignoring custom path '" + cp + "' due to invalid path: " + ex.getMessage());
             }
+            return null;
         }
-        return cp;
+    }
+
+    private String expandUserHome(String path) {
+        if (path == null || !path.startsWith("~")) {
+            return path;
+        }
+        String home = System.getProperty("user.home");
+        if (home == null || home.isEmpty()) {
+            return path;
+        }
+        if (path.equals("~")) {
+            return home;
+        }
+        if (path.startsWith("~/") || path.startsWith("~\\")) {
+            return home + path.substring(1);
+        }
+        return path;
     }
 
     private String ensureDir(String dir) {
-        if (!dir.endsWith("/") && !dir.endsWith("\\")) dir = dir + "/";
-        new File(dir).mkdirs();
-        return dir;
+        if (dir == null || dir.isEmpty()) return dir;
+        File directory = new File(dir);
+        directory.mkdirs();
+        String path = directory.getPath();
+        if (!path.endsWith(File.separator)) path = path + File.separator;
+        return path;
     }
 
     private boolean downloadPluginToFile(String outputFilePath, HttpURLConnection connection) throws IOException {

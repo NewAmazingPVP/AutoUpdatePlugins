@@ -24,6 +24,7 @@ import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.SecureRandom;
@@ -213,16 +214,32 @@ public class PluginUpdater {
     private static String sanitizeCustomPath(String cp) {
         if (cp == null) return null;
         cp = cp.trim();
-        while (cp.startsWith("/") || cp.startsWith("\\")) {
-            cp = cp.substring(1);
+        if (cp.isEmpty()) return null;
+        cp = expandUserHome(cp);
+        try {
+            Path path = Paths.get(cp).normalize();
+            String normalized = path.toString();
+            return normalized.isEmpty() ? null : normalized;
+        } catch (InvalidPathException ex) {
+            return null;
         }
-        if (cp.matches("^[A-Za-z]:[\\/].*")) {
-            cp = cp.substring(2);
-            while (cp.startsWith("/") || cp.startsWith("\\")) {
-                cp = cp.substring(1);
-            }
+    }
+
+    private static String expandUserHome(String path) {
+        if (path == null || !path.startsWith("~")) {
+            return path;
         }
-        return cp;
+        String home = System.getProperty("user.home");
+        if (home == null || home.isEmpty()) {
+            return path;
+        }
+        if (path.equals("~")) {
+            return home;
+        }
+        if (path.startsWith("~/") || path.startsWith("~\\")) {
+            return home + path.substring(1);
+        }
+        return path;
     }
 
 
