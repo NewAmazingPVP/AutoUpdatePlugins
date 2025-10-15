@@ -72,6 +72,7 @@ paths:
   tempPath: ''
   updatePath: ''
   filePath: ''
+  rollbackPath: ''
 
 # Performance and reliability options
 performance:
@@ -91,6 +92,20 @@ performance:
   backoffMaxMs: 5000
   # Limit concurrent downloads per host to avoid 429s and improve stability
   maxPerHost: 3
+
+rollback:
+  # Keep a backup of the previous version when updating a plugin and automatically revert back on plugin load failure (experimental!)
+  enabled: false
+  # Maximum number of old versions to keep per plugin (0 = unlimited)
+  maxBackups: 3
+  # Case-insensitive regex patterns that trigger rollback when matched in logs.
+  filters:
+    - "Unsupported API version"
+    - "Could not load plugin"
+    - "Error occurred while enabling"
+    - "Unsupported MC version"
+    - "You are running an unsupported server version"
+
 
 # Plugins List Configuration
 # Edit the generated list.yml in this folder. Format:

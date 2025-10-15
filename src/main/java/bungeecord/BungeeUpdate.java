@@ -27,6 +27,7 @@ public final class BungeeUpdate extends Plugin {
     private PluginUpdater pluginUpdater;
     private File myFile;
     private ConfigManager cfgMgr;
+    private RollbackMonitor rollbackMonitor;
 
     @Override
     public void onEnable() {
@@ -39,6 +40,7 @@ public final class BungeeUpdate extends Plugin {
         applyHttpConfigFromCfg();
         applyBehaviorConfig();
         UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
+        configureRollback();
         File dataFolder = getDataFolder();
         myFile = new File(dataFolder, "list.yml");
         ensureListFileWithExample(myFile);
@@ -79,6 +81,7 @@ public final class BungeeUpdate extends Plugin {
         applyHttpConfigFromCfg();
         applyBehaviorConfig();
         UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
+        configureRollback();
         getLogger().info("AutoUpdatePlugins configuration reloaded.");
     }
 
@@ -150,6 +153,29 @@ public final class BungeeUpdate extends Plugin {
             }
         }
         PluginUpdater.moveStagedUpdatesIfNeeded(getLogger(), "waterfall", pluginsDir, configuredUpdatePath);
+    }
+
+    private void configureRollback() {
+        RollbackManager.refreshConfiguration(getLogger());
+        String platform = "waterfall";
+        if (UpdateOptions.rollbackEnabled) {
+            RollbackManager.processPendingRollbacks(getLogger(), platform);
+            setupRollbackMonitor(platform);
+        } else if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
+    }
+
+    private void setupRollbackMonitor(String platform) {
+        if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
+        if (!UpdateOptions.rollbackEnabled) {
+            return;
+        }
+        rollbackMonitor = RollbackMonitor.attach(ProxyServer.getInstance().getLogger(), getLogger(), platform);
     }
 
 
@@ -231,6 +257,7 @@ public final class BungeeUpdate extends Plugin {
             UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
             UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
             UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
+            UpdateOptions.rollbackPath = cfgMgr.getString("paths.rollbackPath");
             UpdateOptions.filePath = cfgMgr.getString("paths.filePath");
             UpdateOptions.maxParallel = Math.max(1, cfgMgr.getInt("performance.maxParallel"));
             UpdateOptions.connectTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.connectTimeoutMs"));
@@ -240,6 +267,8 @@ public final class BungeeUpdate extends Plugin {
             UpdateOptions.backoffBaseMs = Math.max(0, cfgMgr.getInt("performance.backoffBaseMs"));
             UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, cfgMgr.getInt("performance.backoffMaxMs"));
             UpdateOptions.maxPerHost = Math.max(1, cfgMgr.getInt("performance.maxPerHost"));
+            UpdateOptions.rollbackEnabled = cfgMgr.getBoolean("rollback.enabled");
+            UpdateOptions.rollbackMaxCopies = Math.max(1, cfgMgr.getInt("rollback.maxBackups"));
             List<Map<String, Object>> uaList =
                     (List<Map<String, Object>>) cfgMgr.getList("http.userAgents");
             UpdateOptions.userAgents.clear();
@@ -247,6 +276,13 @@ public final class BungeeUpdate extends Plugin {
                 for (Map<String, Object> m : uaList) {
                     Object v = m.get("ua");
                     if (v != null) UpdateOptions.userAgents.add(v.toString());
+                }
+            }
+            List<?> filters = cfgMgr.getList("rollback.filters");
+            UpdateOptions.rollbackFilters.clear();
+            if (filters != null) {
+                for (Object o : filters) {
+                    if (o != null) UpdateOptions.rollbackFilters.add(o.toString());
                 }
             }
         } catch (Throwable ignored) {
@@ -290,6 +326,7 @@ public final class BungeeUpdate extends Plugin {
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
+        cfgMgr.addDefault("paths.rollbackPath", "", "Custom rollback storage path (optional)");
         cfgMgr.addDefault("paths.filePath", "", "Custom final plugin path (optional)");
 
         cfgMgr.addDefault("performance.maxParallel", 4, "Parallel downloads (1 to CPU count)");
@@ -300,6 +337,16 @@ public final class BungeeUpdate extends Plugin {
         cfgMgr.addDefault("performance.backoffBaseMs", 500, "Backoff base in ms for retries");
         cfgMgr.addDefault("performance.backoffMaxMs", 5000, "Backoff max in ms for retries");
         cfgMgr.addDefault("performance.maxPerHost", 3, "Max concurrent downloads per host");
+
+        ArrayList<String> rollbackFilters = new ArrayList<>();
+        rollbackFilters.add("Unsupported API version");
+        rollbackFilters.add("Could not load plugin");
+        rollbackFilters.add("Error occurred while enabling");
+        rollbackFilters.add("Unsupported MC version");
+        rollbackFilters.add("You are running an unsupported server version");
+        cfgMgr.addDefault("rollback.enabled", false, "Monitor server logs for plugin load errors and restore the previous jar automatically.");
+        cfgMgr.addDefault("rollback.maxBackups", 3, "Maximum rollback snapshots to retain per plugin.");
+        cfgMgr.addDefault("rollback.filters", rollbackFilters, "Case-insensitive regex patterns that trigger rollback when matched in logs.");
 
         cfgMgr.saveConfig();
     }
@@ -319,6 +366,14 @@ public final class BungeeUpdate extends Plugin {
             }
             pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key"));
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
+        }
+    }
+
+    @Override
+    public void onDisable() {
+        if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
         }
     }
 }

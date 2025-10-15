@@ -28,6 +28,10 @@ public class UpdateOptions {
     public static boolean useUpdateFolder = true;
     public static int maxPerHost = 3;
     public static final ConcurrentHashMap<String, Semaphore> hostSemaphores = new ConcurrentHashMap<>();
+    public static boolean rollbackEnabled = false;
+    public static int rollbackMaxCopies = 3;
+    public static String rollbackPath = null;
+    public static final List<String> rollbackFilters = new ArrayList<>();
 
 
     private UpdateOptions() {

@@ -31,6 +31,7 @@ public final class SpigotUpdate extends JavaPlugin {
     private File myFile;
     private FileConfiguration config;
     private ConfigManager cfgMgr;
+    private RollbackMonitor rollbackMonitor;
 
     @Override
     public void onEnable() {
@@ -53,6 +54,7 @@ public final class SpigotUpdate extends JavaPlugin {
 
         applyHttpConfig();
         applyBehaviorConfig();
+        configureRollback();
     }
 
     private void ensureListFileWithExample(File file) {
@@ -90,7 +92,31 @@ public final class SpigotUpdate extends JavaPlugin {
         generateOrUpdateConfig();
         applyHttpConfig();
         applyBehaviorConfig();
+        configureRollback();
         getLogger().info("AutoUpdatePlugins configuration reloaded.");
+    }
+
+    private void configureRollback() {
+        RollbackManager.refreshConfiguration(getLogger());
+        String platform = serverPlatform();
+        if (UpdateOptions.rollbackEnabled) {
+            RollbackManager.processPendingRollbacks(getLogger(), platform);
+            setupRollbackMonitor(platform);
+        } else if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
+    }
+
+    private void setupRollbackMonitor(String platform) {
+        if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
+        if (!UpdateOptions.rollbackEnabled) {
+            return;
+        }
+        rollbackMonitor = RollbackMonitor.attach(getServer().getLogger(), getLogger(), platform);
     }
 
     public void periodUpdatePlugins() {
@@ -198,6 +224,7 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.debug = config.getBoolean("behavior.debug");
             UpdateOptions.tempPath = config.getString("paths.tempPath");
             UpdateOptions.updatePath = config.getString("paths.updatePath");
+            UpdateOptions.rollbackPath = config.getString("paths.rollbackPath");
             UpdateOptions.filePath = config.getString("paths.filePath");
             UpdateOptions.maxParallel = Math.max(1, config.getInt("performance.maxParallel"));
             UpdateOptions.connectTimeoutMs = Math.max(1000, config.getInt("performance.connectTimeoutMs"));
@@ -207,6 +234,8 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.backoffBaseMs = Math.max(0, config.getInt("performance.backoffBaseMs"));
             UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, config.getInt("performance.backoffMaxMs"));
             UpdateOptions.maxPerHost = Math.max(1, config.getInt("performance.maxPerHost"));
+            UpdateOptions.rollbackEnabled = config.getBoolean("rollback.enabled");
+            UpdateOptions.rollbackMaxCopies = Math.max(1, config.getInt("rollback.maxBackups"));
 
             List<Map<String, Object>> uaList = (List<Map<String, Object>>) config.getList("http.userAgents");
             UpdateOptions.userAgents.clear();
@@ -217,8 +246,23 @@ public final class SpigotUpdate extends JavaPlugin {
                 }
             }
 
+            List<?> filters = config.getList("rollback.filters");
+            UpdateOptions.rollbackFilters.clear();
+            if (filters != null) {
+                for (Object o : filters) {
+                    if (o != null) UpdateOptions.rollbackFilters.add(o.toString());
+                }
+            }
 
         } catch (Throwable ignored) {
+        }
+    }
+
+    @Override
+    public void onDisable() {
+        if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
         }
     }
 
@@ -287,7 +331,18 @@ public final class SpigotUpdate extends JavaPlugin {
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
+        cfgMgr.addDefault("paths.rollbackPath", "", "Custom rollback storage path (optional)");
         cfgMgr.addDefault("paths.filePath", "", "Custom final plugin path (optional)");
+
+        ArrayList<String> rollbackFilters = new ArrayList<>();
+        rollbackFilters.add("Unsupported API version");
+        rollbackFilters.add("Could not load plugin");
+        rollbackFilters.add("Error occurred while enabling");
+        rollbackFilters.add("Unsupported MC version");
+        rollbackFilters.add("You are running an unsupported server version");
+        cfgMgr.addDefault("rollback.enabled", false, "Monitor server logs for plugin load errors and restore the previous jar automatically.");
+        cfgMgr.addDefault("rollback.maxBackups", 3, "Maximum rollback snapshots to retain per plugin.");
+        cfgMgr.addDefault("rollback.filters", rollbackFilters, "Case-insensitive regex patterns that trigger rollback when matched in logs.");
 
         cfgMgr.addDefault("performance.maxParallel", 4, "Parallel downloads (1 to CPU count)");
         cfgMgr.addDefault("performance.connectTimeoutMs", 10000, "HTTP connect timeout in ms");

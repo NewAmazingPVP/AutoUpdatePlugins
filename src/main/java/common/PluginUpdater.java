@@ -1289,7 +1289,7 @@ public class PluginUpdater {
             return s;
         }
     }
-    
+
     public static void moveStagedUpdatesIfNeeded(Logger logger, String platform, Path pluginsDir, String configuredUpdatePath) {
         if (!requiresManualUpdateMove(platform) || pluginsDir == null) {
             return;

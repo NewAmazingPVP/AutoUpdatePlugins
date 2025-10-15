@@ -7,6 +7,7 @@ import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -42,6 +43,7 @@ public final class VelocityUpdate {
     private final Metrics.Factory metricsFactory;
     private ConfigManager cfgMgr;
     private final Logger logger = Logger.getLogger("AutoUpdatePlugins");
+    private RollbackMonitor rollbackMonitor;
 
     @Inject
     public VelocityUpdate(ProxyServer proxy, @DataDirectory Path dataDirectory, Metrics.Factory metricsFactory) {
@@ -56,6 +58,7 @@ public final class VelocityUpdate {
         handleUpdateFolder();
         applyHttpConfigFromCfg();
         applyBehaviorConfig();
+        configureRollback();
         logger.info("AutoUpdatePlugins configuration reloaded.");
     }
 
@@ -80,6 +83,7 @@ public final class VelocityUpdate {
         generateOrUpdateConfig();
         applyHttpConfigFromCfg();
         applyBehaviorConfig();
+        configureRollback();
         UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
         myFile = dataDirectory.resolve("list.yml").toFile();
         ensureListFileWithExample(myFile);
@@ -90,6 +94,37 @@ public final class VelocityUpdate {
 
         CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
         commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig));
+    }
+
+    private void configureRollback() {
+        RollbackManager.refreshConfiguration(logger);
+        String platform = "velocity";
+        if (UpdateOptions.rollbackEnabled) {
+            RollbackManager.processPendingRollbacks(logger, platform);
+            setupRollbackMonitor(platform);
+        } else if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
+    }
+
+    private void setupRollbackMonitor(String platform) {
+        if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
+        if (!UpdateOptions.rollbackEnabled) {
+            return;
+        }
+        rollbackMonitor = RollbackMonitor.attach(java.util.logging.Logger.getLogger(""), logger, platform);
+    }
+
+    @Subscribe
+    public void onProxyShutdown(ProxyShutdownEvent event) {
+        if (rollbackMonitor != null) {
+            rollbackMonitor.detach();
+            rollbackMonitor = null;
+        }
     }
 
     private void ensureListFileWithExample(File file) {
@@ -221,6 +256,7 @@ public final class VelocityUpdate {
             UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
             UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
             UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
+            UpdateOptions.rollbackPath = cfgMgr.getString("paths.rollbackPath");
             UpdateOptions.filePath = cfgMgr.getString("paths.filePath");
             UpdateOptions.maxParallel = Math.max(1, cfgMgr.getInt("performance.maxParallel"));
             UpdateOptions.connectTimeoutMs = Math.max(1000, cfgMgr.getInt("performance.connectTimeoutMs"));
@@ -230,6 +266,8 @@ public final class VelocityUpdate {
             UpdateOptions.backoffBaseMs = Math.max(0, cfgMgr.getInt("performance.backoffBaseMs"));
             UpdateOptions.backoffMaxMs = Math.max(UpdateOptions.backoffBaseMs, cfgMgr.getInt("performance.backoffMaxMs"));
             UpdateOptions.maxPerHost = Math.max(1, cfgMgr.getInt("performance.maxPerHost"));
+            UpdateOptions.rollbackEnabled = cfgMgr.getBoolean("rollback.enabled");
+            UpdateOptions.rollbackMaxCopies = Math.max(1, cfgMgr.getInt("rollback.maxBackups"));
             List<Map<String, Object>> uaList =
                     (List<Map<String, Object>>) cfgMgr.getList("http.userAgents");
             UpdateOptions.userAgents.clear();
@@ -237,6 +275,13 @@ public final class VelocityUpdate {
                 for (Map<String, Object> m : uaList) {
                     Object v = m.get("ua");
                     if (v != null) UpdateOptions.userAgents.add(v.toString());
+                }
+            }
+            List<?> filters = cfgMgr.getList("rollback.filters");
+            UpdateOptions.rollbackFilters.clear();
+            if (filters != null) {
+                for (Object o : filters) {
+                    if (o != null) UpdateOptions.rollbackFilters.add(o.toString());
                 }
             }
         } catch (Throwable ignored) {
@@ -281,6 +326,7 @@ public final class VelocityUpdate {
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");
+        cfgMgr.addDefault("paths.rollbackPath", "", "Custom rollback storage path (optional)");
         cfgMgr.addDefault("paths.filePath", "", "Custom final plugin path (optional)");
 
         cfgMgr.addDefault("performance.maxParallel", 4, "Parallel downloads (1 to CPU count)");
@@ -291,6 +337,16 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("performance.backoffBaseMs", 500, "Backoff base in ms for retries");
         cfgMgr.addDefault("performance.backoffMaxMs", 5000, "Backoff max in ms for retries");
         cfgMgr.addDefault("performance.maxPerHost", 3, "Max concurrent downloads per host");
+
+        ArrayList<String> rollbackFilters = new ArrayList<>();
+        rollbackFilters.add("Unsupported API version");
+        rollbackFilters.add("Could not load plugin");
+        rollbackFilters.add("Error occurred while enabling");
+        rollbackFilters.add("Unsupported MC version");
+        rollbackFilters.add("You are running an unsupported server version");
+        cfgMgr.addDefault("rollback.enabled", false, "Monitor server logs for plugin load errors and restore the previous jar automatically.");
+        cfgMgr.addDefault("rollback.maxBackups", 3, "Maximum rollback snapshots to retain per plugin.");
+        cfgMgr.addDefault("rollback.filters", rollbackFilters, "Case-insensitive regex patterns that trigger rollback when matched in logs.");
 
         cfgMgr.saveConfig();
     }

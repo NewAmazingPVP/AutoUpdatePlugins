@@ -172,7 +172,7 @@ public class PluginDownloader {
                     }
 
                     if (downloaded) {
-                        if (postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath)) {
+                        if (postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName)) {
                             return true;
                         }
                     }
@@ -258,7 +258,7 @@ public class PluginDownloader {
         return true;
     }
 
-    private boolean postProcessDownloadedFile(File rawTmp, File outTmp, String outputFilePath, String rawTempPath, String outputTempPath) throws IOException {
+    private boolean postProcessDownloadedFile(File rawTmp, File outTmp, String outputFilePath, String rawTempPath, String outputTempPath, String pluginName) throws IOException {
         if (isZipFile(rawTempPath)) {
             boolean extracted = extractFirstJarFromZip(rawTempPath, outputTempPath);
             if (!extracted) {
@@ -274,6 +274,16 @@ public class PluginDownloader {
         }
 
         File target = new File(outputFilePath);
+        if (UpdateOptions.rollbackEnabled) {
+            try {
+                RollbackManager.prepareBackup(logger, pluginName, target.toPath());
+            } catch (Exception ex) {
+                if (UpdateOptions.debug) {
+                    logger.log(java.util.logging.Level.FINE, "[DEBUG] Unable to snapshot rollback for " + pluginName, ex);
+                }
+            }
+        }
+
         if (UpdateOptions.debug)
             logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
         if (UpdateOptions.ignoreDuplicates && target.exists() && target.length() == outTmp.length() && sameDigest(target, outTmp, "MD5")) {
@@ -282,6 +292,12 @@ public class PluginDownloader {
             return true;
         }
         moveReplace(outTmp, target);
+        if (UpdateOptions.rollbackEnabled) {
+            try {
+                RollbackManager.markInstalled(pluginName, target.toPath());
+            } catch (Exception ignored) {
+            }
+        }
         cleanupQuietly(rawTmp);
         return true;
     }
