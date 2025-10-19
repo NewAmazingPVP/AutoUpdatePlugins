@@ -422,6 +422,9 @@ public class PluginUpdater {
             if (platform.equalsIgnoreCase("spigot") || platform.equalsIgnoreCase("bukkit") || platform.equalsIgnoreCase("purpur")) {
                 platform = "paper";
             }
+            if (platform.contains("bungee")){
+                platform = "waterfall";
+            }
             String[] parts = value.split("/");
             String projectName = parts[parts.length - 1];
             String latestVersion = getHangarLatestVersion(projectName);
@@ -538,16 +541,16 @@ public class PluginUpdater {
                                 if (getPattern.matcher(fname).find()) {
                                     if (f.has("url")) {
                                         {
-                                                                                String cp = extractCustomPath(entry.getValue());
-                                                                                return pluginDownloader.downloadPlugin(f.get("url").asText(), entry.getKey(), key, cp);
-                                                                            }
+                                            String cp = extractCustomPath(entry.getValue());
+                                            return pluginDownloader.downloadPlugin(f.get("url").asText(), entry.getKey(), key, cp);
+                                        }
                                     }
                                 }
                             } catch (Throwable ignored) {
                             }
                         }
                     } else {
-                        fallbackFile = pickBestFallback(fallbackFile, version);
+                        fallbackFile = pickBestFallback(fallbackFile, version, platform);
                     }
                 }
 
@@ -571,7 +574,8 @@ public class PluginUpdater {
 
     private static JsonNode pickBestFallback(
             JsonNode currentBestFile,
-            JsonNode version
+            JsonNode version,
+            String platform
     ) {
         JsonNode files = version.get("files");
         JsonNode chosen = null;
@@ -589,21 +593,72 @@ public class PluginUpdater {
         if (published != null) {
             try { when = java.time.Instant.parse(published).toEpochMilli(); } catch (Throwable ignored) {}
         }
-        long score = typeBoost + when;
+        long baseScore = typeBoost + when;
 
-        long currentScore = currentBestFile != null
+        String p = platform == null ? "" : platform.toLowerCase();
+
+        java.util.List<String> want = new java.util.ArrayList<>();
+        if (p.contains("folia")) {
+            want.add("folia");
+            want.add("paper");
+            want.add("purpur");
+            want.add("spigot");
+            want.add("bukkit");
+        } else if (p.contains("paper") || p.contains("spigot") || p.contains("bukkit") || p.contains("purpur")) {
+            want.add("paper");
+            want.add("purpur");
+            want.add("spigot");
+            want.add("bukkit");
+        } else if (p.contains("velocity")) {
+            want.add("velocity");
+        } else if (p.contains("bungee") || p.contains("bungeecord") || p.contains("waterfall")) {
+            want.add("bungee");
+            want.add("bungeecord");
+            want.add("waterfall");
+        }
+
+        String[] avoidMods = new String[] { "fabric", "quilt", "forge", "neoforge", ".mrpack" };
+
+        com.fasterxml.jackson.databind.JsonNode best = currentBestFile;
+        long bestScore = currentBestFile != null
                 ? currentBestFile.path("__score").asLong(Long.MIN_VALUE)
                 : Long.MIN_VALUE;
 
-        if (score > currentScore) {
-            ObjectNode annotated =
-                    chosen.deepCopy();
-            annotated.put("__score", score);
-            annotated.put("__published", published == null ? "" : published);
-            annotated.put("__version_type", vt);
-            return annotated;
+        for (com.fasterxml.jackson.databind.JsonNode f : files) {
+            if (!f.has("url")) continue;
+            String fname = f.path("filename").asText("").toLowerCase();
+            boolean primary = f.path("primary").asBoolean(false);
+
+            long s = baseScore;
+            if (primary) s += 5_000_000_000_000L;
+
+            boolean matchedPlatform = false;
+            for (String t : want) {
+                if (!t.isEmpty() && fname.contains(t)) {
+                    s += 200_000_000_000_000L;
+                    matchedPlatform = true;
+                    break;
+                }
+            }
+            if (!matchedPlatform) {
+                for (String t : avoidMods) {
+                    if (fname.contains(t)) {
+                        s -= 100_000_000_000_000L; 
+                        break;
+                    }
+                }
+            }
+
+            if (s > bestScore) {
+                com.fasterxml.jackson.databind.node.ObjectNode annotated = f.deepCopy();
+                annotated.put("__score", s);
+                annotated.put("__published", published == null ? "" : published);
+                annotated.put("__version_type", isRelease ? "release" : version.path("version_type").asText(""));
+                best = annotated;
+                bestScore = s;
+            }
         }
-        return currentBestFile;
+        return best;
     }
 
 

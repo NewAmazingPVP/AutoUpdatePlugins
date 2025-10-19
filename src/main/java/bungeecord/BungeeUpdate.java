@@ -364,7 +364,7 @@ public final class BungeeUpdate extends Plugin {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key"));
+            pluginUpdater.readList(myFile, "bungee", cfgMgr.getString("updates.key"));
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
         }
     }
@@ -375,5 +375,33 @@ public final class BungeeUpdate extends Plugin {
             rollbackMonitor.detach();
             rollbackMonitor = null;
         }
+    }
+
+    private String proxyPlatform() {
+        if (hasClass("io.github.waterfallmc.waterfall.conf.WaterfallConfiguration")
+                || containsIgnoreCase(ProxyServer.getInstance().getVersion(), "waterfall")
+                || containsIgnoreCase(ProxyServer.getInstance().getName(), "waterfall")) {
+            return "waterfall";
+        }
+
+        return "bungee";
+    }
+
+    private boolean isWaterfallProxy() {
+        return "waterfall".equalsIgnoreCase(proxyPlatform());
+    }
+
+    private static boolean hasClass(String name) {
+        try {
+            Class.forName(name);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean containsIgnoreCase(String text, String needle) {
+        return text != null && needle != null
+                && text.toLowerCase(Locale.ROOT).contains(needle.toLowerCase(Locale.ROOT));
     }
 }
