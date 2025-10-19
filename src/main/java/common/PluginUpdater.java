@@ -25,6 +25,7 @@ import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -35,6 +36,7 @@ import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -49,6 +51,10 @@ public class PluginUpdater {
     private final AtomicBoolean updating = new AtomicBoolean(false);
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private volatile ExecutorService currentExecutor;
+
+    private static final List<PendingMove> DEFERRED_MOVES = Collections.synchronizedList(new ArrayList<>());
+    private static final AtomicBoolean DEFERRED_HOOK_REGISTERED = new AtomicBoolean(false);
+    private static final AtomicReference<Logger> DEFERRED_LOGGER = new AtomicReference<>();
 
     public PluginUpdater(Logger logger) {
         this.logger = logger;
@@ -643,7 +649,7 @@ public class PluginUpdater {
             if (!matchedPlatform) {
                 for (String t : avoidMods) {
                     if (fname.contains(t)) {
-                        s -= 100_000_000_000_000L; 
+                        s -= 100_000_000_000_000L;
                         break;
                     }
                 }
@@ -1436,6 +1442,17 @@ public class PluginUpdater {
                         if (logger != null) {
                             logger.info("[AutoUpdatePlugins] Updated " + fileName + " from update folder.");
                         }
+                    } catch (FileSystemException fse) {
+                        if (isWindowsSharingViolation(fse)) {
+                            if (logger != null) {
+                                logger.info("[AutoUpdatePlugins] " + fileName + " is currently in use; deferring update until the proxy shuts down.");
+                            }
+                            scheduleDeferredMove(logger, jar, target);
+                        } else {
+                            if (logger != null) {
+                                logger.log(Level.WARNING, "[AutoUpdatePlugins] Failed to move staged update " + jar + " -> " + target, fse);
+                            }
+                        }
                     } catch (IOException moveEx) {
                         if (logger != null) {
                             logger.log(Level.WARNING, "[AutoUpdatePlugins] Failed to move staged update " + jar + " -> " + target, moveEx);
@@ -1447,6 +1464,181 @@ public class PluginUpdater {
                     logger.log(Level.WARNING, "[AutoUpdatePlugins] Failed to process update folder at " + updateDir, ex);
                 }
             }
+        }
+    }
+
+    private static void scheduleDeferredMove(Logger logger, Path source, Path target) {
+        Path normalizedSource = source.toAbsolutePath().normalize();
+        Path normalizedTarget = target.toAbsolutePath().normalize();
+        PendingMove pending = new PendingMove(normalizedSource, normalizedTarget);
+        synchronized (DEFERRED_MOVES) {
+            if (!DEFERRED_MOVES.contains(pending)) {
+                DEFERRED_MOVES.add(pending);
+            }
+        }
+        if (logger != null && DEFERRED_LOGGER.get() == null) {
+            DEFERRED_LOGGER.compareAndSet(null, logger);
+        }
+        if (DEFERRED_HOOK_REGISTERED.compareAndSet(false, true)) {
+            Runtime.getRuntime().addShutdownHook(new Thread(PluginUpdater::runDeferredMoves, "AUP-DeferredMoves"));
+        }
+    }
+
+    private static void runDeferredMoves() {
+        List<PendingMove> snapshot;
+        synchronized (DEFERRED_MOVES) {
+            if (DEFERRED_MOVES.isEmpty()) {
+                return;
+            }
+            snapshot = new ArrayList<>(DEFERRED_MOVES);
+            DEFERRED_MOVES.clear();
+        }
+        Logger logger = DEFERRED_LOGGER.get();
+        if (isWindows()) {
+            if (!runWindowsDeferredMoveScript(snapshot, logger)) {
+                attemptInlineMoves(snapshot, logger);
+            }
+        } else {
+            attemptInlineMoves(snapshot, logger);
+        }
+    }
+
+    private static boolean runWindowsDeferredMoveScript(List<PendingMove> moves, Logger logger) {
+        if (moves.isEmpty()) return true;
+        Path baseDir = moves.get(0).source.getParent();
+        if (baseDir == null) {
+            baseDir = Paths.get(".");
+        }
+        baseDir = baseDir.toAbsolutePath().normalize();
+        try {
+            Path script = Files.createTempFile(baseDir, "aup-deferred-move-", ".cmd");
+            Path logFile = baseDir.resolve("aup-deferred-move.log");
+            List<String> lines = new ArrayList<>();
+            lines.add("@echo off");
+            lines.add("setlocal DISABLEDELAYEDEXPANSION");
+            lines.add("set RETRY_LIMIT=120");
+            lines.add("set WAIT_SECONDS=5");
+            lines.add("set \"LOG=" + escapeForCmd(logFile.toString()) + "\"");
+            lines.add("echo [%date% %time%] AutoUpdatePlugins deferred move script started.>>\"%LOG%\"");
+            lines.add("");
+            for (PendingMove move : moves) {
+                String src = escapeForCmd(move.source.toString());
+                String dst = escapeForCmd(move.target.toString());
+                lines.add("call :move \"" + src + "\" \"" + dst + "\"");
+                lines.add("if errorlevel 1 goto fail");
+                lines.add("");
+            }
+            lines.add("goto done");
+            lines.add("");
+            lines.add(":move");
+            lines.add("setlocal ENABLEDELAYEDEXPANSION");
+            lines.add("set \"SRC=%~1\"");
+            lines.add("set \"DST=%~2\"");
+            lines.add("set COUNT=0");
+            lines.add(":retry");
+            lines.add("if not exist \"!SRC!\" (");
+            lines.add("  endlocal & exit /b 0");
+            lines.add(")");
+            lines.add("for %%D in (\"!DST!\") do if not exist \"%%~dpD\" mkdir \"%%~dpD\" >nul 2>&1");
+            lines.add("move /Y \"!SRC!\" \"!DST!\" >nul 2>&1");
+            lines.add("if errorlevel 1 (");
+            lines.add("  set /a COUNT+=1");
+            lines.add("  if !COUNT! GEQ %RETRY_LIMIT% (");
+            lines.add("    echo [%date% %time%] Failed to move \"!SRC!\" to \"!DST!\" after !COUNT! attempts.>>\"%LOG%\"");
+            lines.add("    endlocal & exit /b 1");
+            lines.add("  )");
+            lines.add("  timeout /t %WAIT_SECONDS% >nul");
+            lines.add("  goto retry");
+            lines.add(")");
+            lines.add("echo [%date% %time%] Moved \"!SRC!\" to \"!DST!\".>>\"%LOG%\"");
+            lines.add("endlocal & exit /b 0");
+            lines.add("");
+            lines.add(":fail");
+            lines.add("echo [%date% %time%] AutoUpdatePlugins deferred move script failed.>>\"%LOG%\"");
+            lines.add("del \"%~f0\"");
+            lines.add("exit /b 1");
+            lines.add("");
+            lines.add(":done");
+            lines.add("echo [%date% %time%] AutoUpdatePlugins deferred move script completed.>>\"%LOG%\"");
+            lines.add("del \"%~f0\"");
+            lines.add("exit /b 0");
+
+            Files.write(script, lines, StandardCharsets.UTF_8);
+            new ProcessBuilder("cmd.exe", "/C", "call", script.toString()).start();
+            if (logger != null) {
+                logger.info("[AutoUpdatePlugins] Scheduled deferred plugin updates via " + script);
+            }
+            return true;
+        } catch (IOException ex) {
+            if (logger != null) {
+                logger.log(Level.WARNING, "[AutoUpdatePlugins] Failed to create deferred move script", ex);
+            }
+            return false;
+        }
+    }
+
+    private static void attemptInlineMoves(List<PendingMove> moves, Logger logger) {
+        for (PendingMove move : moves) {
+            try {
+                Files.createDirectories(move.target.getParent());
+                Files.move(move.source, move.target, StandardCopyOption.REPLACE_EXISTING);
+                if (logger != null) {
+                    logger.info("[AutoUpdatePlugins] Deferred update applied for " + move.target.getFileName());
+                }
+            } catch (IOException ex) {
+                if (logger != null) {
+                    logger.log(Level.WARNING, "[AutoUpdatePlugins] Deferred move still failing " + move.source + " -> " + move.target, ex);
+                }
+            }
+        }
+    }
+
+    private static boolean isWindowsSharingViolation(FileSystemException ex) {
+        if (!isWindows()) return false;
+        String reason = ex.getReason();
+        if (reason != null) {
+            String lower = reason.toLowerCase(Locale.ROOT);
+            if (lower.contains("being used by another process") || lower.contains("sharing violation")) {
+                return true;
+            }
+        }
+        String message = ex.getMessage();
+        if (message != null) {
+            String lower = message.toLowerCase(Locale.ROOT);
+            return lower.contains("being used by another process") || lower.contains("sharing violation");
+        }
+        return false;
+    }
+
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name", "");
+        return os.toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static String escapeForCmd(String path) {
+        return path.replace("%", "%%");
+    }
+
+    private static final class PendingMove {
+        private final Path source;
+        private final Path target;
+
+        private PendingMove(Path source, Path target) {
+            this.source = source;
+            this.target = target;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof PendingMove)) return false;
+            PendingMove that = (PendingMove) o;
+            return Objects.equals(source, that.source) && Objects.equals(target, that.target);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(source, target);
         }
     }
 
