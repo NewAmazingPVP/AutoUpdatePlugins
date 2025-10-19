@@ -344,17 +344,46 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         return completions;
     }
 
+
     private String serverPlatform() {
-        try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+        if (hasClass("io.papermc.paper.threadedregions.RegionizedServer")
+                || containsIgnoreCase(Bukkit.getVersion(), "folia")
+                || containsIgnoreCase(Bukkit.getServer().getName(), "folia")) {
             return "folia";
-        } catch (Throwable ignored) {
         }
-        try {
-            String v = Bukkit.getVersion();
-            if (v != null && v.toLowerCase().contains("folia")) return "folia";
-        } catch (Throwable ignored) {
+
+        if (hasClass("io.papermc.paper.configuration.Configuration")
+                || hasClass("com.destroystokyo.paper.PaperConfig")
+                || containsIgnoreCase(Bukkit.getServer().getName(), "paper")
+                || containsIgnoreCase(Bukkit.getVersion(), "paper")) {
+            return "paper";
         }
-        return "paper";
+
+        if (hasClass("org.purpurmc.purpur.PurpurConfig")
+                || containsIgnoreCase(Bukkit.getVersion(), "purpur")) return "purpur";
+
+
+        if (hasClass("org.spigotmc.SpigotConfig")
+                || containsIgnoreCase(Bukkit.getServer().getName(), "spigot")
+                || containsIgnoreCase(Bukkit.getVersion(), "spigot")) {
+            return "spigot";
+        }
+
+        return "bukkit";
     }
+
+    private static boolean hasClass(String name) {
+        try {
+            Class.forName(name);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean containsIgnoreCase(String text, String needle) {
+        return text != null && needle != null
+                && text.toLowerCase(Locale.ROOT).contains(needle.toLowerCase(Locale.ROOT));
+    }
+
 }

@@ -3,6 +3,7 @@ package common;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.jetbrains.annotations.NotNull;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
@@ -418,6 +419,9 @@ public class PluginUpdater {
 
     private boolean handleHangarDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
         try {
+            if (platform.equalsIgnoreCase("spigot") || platform.equalsIgnoreCase("bukkit") || platform.equalsIgnoreCase("purpur")) {
+                platform = "paper";
+            }
             String[] parts = value.split("/");
             String projectName = parts[parts.length - 1];
             String latestVersion = getHangarLatestVersion(projectName);
@@ -490,12 +494,17 @@ public class PluginUpdater {
                         for (JsonNode l : version.get("loaders")) {
                             String lv = l.asText("").toLowerCase();
                             if (p.contains("paper")) {
-                                if (lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
+                                if (lv.contains("paper")) {
                                     loaderOk = true;
                                     break;
                                 }
-                            } else if (p.contains("spigot") || p.contains("bukkit")) {
-                                if (lv.contains("spigot") || lv.contains("bukkit")) {
+                            } else if (p.contains("spigot")) {
+                                if (lv.contains("spigot")) {
+                                    loaderOk = true;
+                                    break;
+                                }
+                            } else if (p.contains("bukkit")) {
+                                if (lv.contains("bukkit")) {
                                     loaderOk = true;
                                     break;
                                 }
@@ -505,12 +514,12 @@ public class PluginUpdater {
                                     break;
                                 }
                             } else if (p.contains("velocity")) {
-                                if (lv.contains("velocity") || lv.contains("paper") || lv.contains("spigot") || lv.contains("bukkit")) {
+                                if (lv.contains("velocity")) {
                                     loaderOk = true;
                                     break;
                                 }
                             } else if (p.contains("bungee")) {
-                                if (lv.contains("bungeecord") || lv.contains("bungee") || lv.contains("velocity")) {
+                                if (lv.contains("bungeecord") || lv.contains("bungee")) {
                                     loaderOk = true;
                                     break;
                                 }
@@ -538,9 +547,7 @@ public class PluginUpdater {
                             }
                         }
                     } else {
-                        if (fallbackFile == null && files.size() > 0 && files.get(0).has("url")) {
-                            fallbackFile = files.get(0);
-                        }
+                        fallbackFile = pickBestFallback(fallbackFile, version);
                     }
                 }
 
@@ -560,6 +567,43 @@ public class PluginUpdater {
             logger.info("Failed to download plugin from modrinth: " + e.getMessage());
             return false;
         }
+    }
+
+    private static JsonNode pickBestFallback(
+            JsonNode currentBestFile,
+            JsonNode version
+    ) {
+        JsonNode files = version.get("files");
+        JsonNode chosen = null;
+        for (JsonNode f : files) {
+            if (f.path("primary").asBoolean(false)) { chosen = f; break; }
+        }
+        if (chosen == null) chosen = files.get(0);
+
+        String vt = version.path("version_type").asText("release");
+        boolean isRelease = "release".equalsIgnoreCase(vt);
+        long typeBoost = isRelease ? 1_000_000_000_000_000L : 0L;
+
+        long when = 0L;
+        String published = version.path("date_published").asText(null);
+        if (published != null) {
+            try { when = java.time.Instant.parse(published).toEpochMilli(); } catch (Throwable ignored) {}
+        }
+        long score = typeBoost + when;
+
+        long currentScore = currentBestFile != null
+                ? currentBestFile.path("__score").asLong(Long.MIN_VALUE)
+                : Long.MIN_VALUE;
+
+        if (score > currentScore) {
+            ObjectNode annotated =
+                    chosen.deepCopy();
+            annotated.put("__score", score);
+            annotated.put("__published", published == null ? "" : published);
+            annotated.put("__version_type", vt);
+            return annotated;
+        }
+        return currentBestFile;
     }
 
 
