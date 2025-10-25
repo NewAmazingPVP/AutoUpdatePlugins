@@ -42,6 +42,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import java.util.zip.GZIPInputStream;
 
 public class PluginUpdater {
@@ -425,16 +426,39 @@ public class PluginUpdater {
 
     private boolean handleHangarDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
         try {
+            if (platform == null || platform.trim().isEmpty()) {
+                platform = "paper";
+            }
             if (platform.equalsIgnoreCase("spigot") || platform.equalsIgnoreCase("bukkit") || platform.equalsIgnoreCase("purpur")) {
                 platform = "paper";
             }
-            if (platform.contains("bungee")){
+            if (platform.toLowerCase(Locale.ROOT).contains("bungee")) {
                 platform = "waterfall";
             }
-            String[] parts = value.split("/");
-            String projectName = parts[parts.length - 1];
-            String latestVersion = getHangarLatestVersion(projectName);
-            String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectName + "/versions/" + latestVersion + "/" + platform.toUpperCase() + "/download";
+
+            String query = null;
+            int qIdx = value.indexOf('?');
+            if (qIdx != -1) {
+                query = value.substring(qIdx + 1);
+                value = value.substring(0, qIdx);
+            }
+
+            String projectPath = extractHangarProjectPath(value);
+            if (projectPath == null || projectPath.isEmpty()) {
+                logger.info("Failed to determine Hangar project slug from URL: " + value);
+                return false;
+            }
+
+            ReleasePreference preference = parseReleasePreference(query, UpdateOptions.allowPreReleaseDefault);
+            String explicitChannel = queryParam(query, "channel");
+
+            String latestVersion = resolveHangarVersion(projectPath, platform, preference, explicitChannel);
+            if (latestVersion == null || latestVersion.isEmpty()) {
+                logger.info("Failed to locate a suitable Hangar version for " + projectPath + ".");
+                return false;
+            }
+
+            String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectPath + "/versions/" + latestVersion + "/" + platform.toUpperCase(Locale.ROOT) + "/download";
             String cp = extractCustomPath(entry.getValue());
             return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
         } catch (IOException e) {
@@ -460,6 +484,338 @@ public class PluginUpdater {
     }
 
 
+    private String extractHangarProjectPath(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            URL url = new URL(trimmed);
+            String path = url.getPath();
+            if (path != null && !path.isEmpty()) {
+                String[] segments = path.split("/");
+                List<String> parts = new ArrayList<>();
+                for (String segment : segments) {
+                    if (segment != null && !segment.isEmpty()) {
+                        parts.add(segment);
+                    }
+                }
+                if (!parts.isEmpty()) {
+                    if (parts.size() >= 2) {
+                        return parts.get(parts.size() - 2) + "/" + parts.get(parts.size() - 1);
+                    }
+                    return parts.get(parts.size() - 1);
+                }
+            }
+        } catch (Exception ignored) {
+            // treat as plain slug below
+        }
+
+        String cleaned = trimmed.replaceAll("^/+|/+$", "");
+        if (cleaned.contains("/")) {
+            String[] segs = cleaned.split("/");
+            if (segs.length >= 2) {
+                return segs[segs.length - 2] + "/" + segs[segs.length - 1];
+            }
+        }
+        return cleaned;
+    }
+
+    private String resolveHangarVersion(String projectPath, String platform, ReleasePreference preference, String explicitChannel) throws IOException {
+        if ((explicitChannel == null || explicitChannel.trim().isEmpty()) && preference.isReleaseOnly()) {
+            return getHangarLatestVersion(projectPath);
+        }
+
+        String normalizedPlatform = platform == null ? "PAPER" : platform.toUpperCase(Locale.ROOT);
+        ObjectMapper mapper = new ObjectMapper();
+        int offset = 0;
+        long bestScore = Long.MIN_VALUE;
+        String bestVersion = null;
+
+        while (offset < 250) {
+            String api = "https://hangar.papermc.io/api/v1/projects/" + projectPath + "/versions?limit=25&offset=" + offset;
+            JsonNode root = mapper.readTree(new URL(api));
+            JsonNode results = root.path("result");
+            if (!results.isArray() || results.size() == 0) {
+                break;
+            }
+
+            for (JsonNode version : results) {
+                if (version == null) continue;
+                String versionName = version.path("name").asText("");
+                if (versionName.isEmpty()) continue;
+
+                JsonNode downloads = version.path("downloads");
+                if (downloads.isMissingNode()) continue;
+                JsonNode platformNode = downloads.path(normalizedPlatform);
+                if (platformNode.isMissingNode()) continue;
+
+                String channelName = version.path("channel").path("name").asText("");
+                if (explicitChannel != null && !explicitChannel.trim().isEmpty()) {
+                    if (channelName.equalsIgnoreCase(explicitChannel)) {
+                        return versionName;
+                    }
+                    continue;
+                }
+
+                String typeKey = hangarTypeKey(channelName);
+                if (!preference.allowsType(typeKey)) {
+                    continue;
+                }
+
+                long when = parseInstantMillis(version.path("createdAt").asText(null));
+                long score = computeTypeBoost(typeKey, preference) + when;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestVersion = versionName;
+                }
+            }
+
+            offset += results.size();
+        }
+
+        return bestVersion;
+    }
+
+    private String hangarTypeKey(String channelName) {
+        if (channelName == null) return "other";
+        String lower = channelName.toLowerCase(Locale.ROOT);
+        if (lower.contains("release") || lower.contains("stable") || lower.contains("default")) {
+            return "release";
+        }
+        if (lower.contains("alpha") || lower.contains("snapshot") || lower.contains("nightly") || lower.contains("dev") || lower.contains("bleeding")) {
+            return "alpha";
+        }
+        if (lower.contains("beta") || lower.contains("rc") || lower.contains("pre") || lower.contains("preview")) {
+            return "beta";
+        }
+        return "other";
+    }
+
+    private long parseInstantMillis(String iso) {
+        if (iso == null || iso.isEmpty()) {
+            return 0L;
+        }
+        try {
+            return java.time.Instant.parse(iso).toEpochMilli();
+        } catch (Throwable ignored) {
+            return 0L;
+        }
+    }
+
+    private static long computeTypeBoost(String versionType, ReleasePreference preference) {
+        if (preference == null) return 0L;
+        if (versionType == null) versionType = "";
+        String vt = versionType.toLowerCase(Locale.ROOT);
+        if (preference.preferLatest) {
+            return 0L;
+        }
+        switch (vt) {
+            case "release":
+            case "stable":
+                long releaseBase = 1_000_000_000_000_000L;
+                if (preference.preferPreRelease) releaseBase -= 100_000_000_000_000L;
+                if (preference.preferAlpha) releaseBase -= 200_000_000_000_000L;
+                return releaseBase;
+            case "beta":
+            case "rc":
+            case "prerelease":
+            case "pre-release":
+            case "preview":
+                if (!preference.allowPreRelease) return -1_000_000_000_000_000L;
+                long preBase = 900_000_000_000_000L;
+                if (preference.preferPreRelease) preBase += 150_000_000_000_000L;
+                if (preference.preferAlpha) preBase -= 50_000_000_000_000L;
+                return preBase;
+            case "alpha":
+            case "snapshot":
+            case "nightly":
+            case "dev":
+            case "bleeding":
+                if (!preference.allowAlpha) return -1_200_000_000_000_000L;
+                long alphaBase = 880_000_000_000_000L;
+                if (preference.preferAlpha) alphaBase += 200_000_000_000_000L;
+                return alphaBase;
+            default:
+                if (!preference.allowAlpha) return -800_000_000_000_000L;
+                long other = 700_000_000_000_000L;
+                if (preference.preferAlpha) other += 100_000_000_000_000L;
+                return other;
+        }
+    }
+
+    private ReleasePreference parseReleasePreference(String query, boolean defaultAllowPreRelease) {
+        boolean allowPreRelease = defaultAllowPreRelease;
+        boolean allowAlpha = defaultAllowPreRelease;
+        boolean preferPreRelease = false;
+        boolean preferAlpha = false;
+        boolean preferLatest = false;
+
+        if (query != null) {
+            String preParam = queryParam(query, "prerelease");
+            if (preParam != null) {
+                boolean val = parseBooleanFlag(preParam, true);
+                allowPreRelease = val;
+                if (val) preferPreRelease = true;
+            }
+
+            String preDash = queryParam(query, "pre-release");
+            if (preDash != null) {
+                boolean val = parseBooleanFlag(preDash, true);
+                allowPreRelease = val;
+                if (val) preferPreRelease = true;
+            }
+
+            String betaParam = queryParam(query, "beta");
+            if (betaParam != null) {
+                boolean val = parseBooleanFlag(betaParam, true);
+                allowPreRelease = val || allowPreRelease;
+                if (val) preferPreRelease = true;
+            }
+
+            String alphaParam = queryParam(query, "alpha");
+            if (alphaParam != null) {
+                boolean val = parseBooleanFlag(alphaParam, true);
+                if (val) {
+                    allowPreRelease = true;
+                    allowAlpha = true;
+                    preferAlpha = true;
+                } else {
+                    allowAlpha = false;
+                    preferAlpha = false;
+                }
+            }
+
+            String latestParam = queryParam(query, "latest");
+            if (latestParam != null) {
+                boolean val = parseBooleanFlag(latestParam, true);
+                if (val) {
+                    allowPreRelease = true;
+                    allowAlpha = true;
+                    preferLatest = true;
+                } else {
+                    preferLatest = false;
+                }
+            }
+
+            String channelParam = queryParam(query, "channel");
+            if (channelParam != null && !channelParam.trim().isEmpty()) {
+                String ch = channelParam.trim().toLowerCase(Locale.ROOT);
+                switch (ch) {
+                    case "release":
+                        allowPreRelease = false;
+                        allowAlpha = false;
+                        preferPreRelease = false;
+                        preferAlpha = false;
+                        preferLatest = false;
+                        break;
+                    case "beta":
+                    case "prerelease":
+                    case "pre-release":
+                    case "preview":
+                        allowPreRelease = true;
+                        preferPreRelease = true;
+                        break;
+                    case "alpha":
+                    case "snapshot":
+                        allowPreRelease = true;
+                        allowAlpha = true;
+                        preferAlpha = true;
+                        break;
+                    case "latest":
+                        allowPreRelease = true;
+                        allowAlpha = true;
+                        preferLatest = true;
+                        break;
+                }
+            }
+        }
+
+        if (!allowPreRelease) {
+            allowAlpha = false;
+            preferPreRelease = false;
+        }
+        if (!allowAlpha) {
+            preferAlpha = false;
+        }
+
+        return new ReleasePreference(allowPreRelease, allowAlpha, preferPreRelease, preferAlpha, preferLatest);
+    }
+
+    private boolean parseBooleanFlag(String raw, boolean defaultWhenBlank) {
+        if (raw == null) {
+            return defaultWhenBlank;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return defaultWhenBlank;
+        }
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.equals("true") || lower.equals("1") || lower.equals("yes") || lower.equals("y") || lower.equals("on")) {
+            return true;
+        }
+        if (lower.equals("false") || lower.equals("0") || lower.equals("no") || lower.equals("n") || lower.equals("off")) {
+            return false;
+        }
+        return defaultWhenBlank;
+    }
+
+    private String firstNonNull(String... values) {
+        if (values == null) return null;
+        for (String v : values) {
+            if (v != null && !v.trim().isEmpty()) {
+                return v;
+            }
+        }
+        return null;
+    }
+
+    private int parsePositiveInt(String input, int fallback) {
+        if (input == null) return fallback;
+        try {
+            int parsed = Integer.parseInt(input.trim());
+            return parsed > 0 ? parsed : fallback;
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private static final class ReleasePreference {
+        private final boolean allowPreRelease;
+        private final boolean allowAlpha;
+        private final boolean preferPreRelease;
+        private final boolean preferAlpha;
+        private final boolean preferLatest;
+
+        private ReleasePreference(boolean allowPreRelease, boolean allowAlpha, boolean preferPreRelease, boolean preferAlpha, boolean preferLatest) {
+            this.allowPreRelease = allowPreRelease;
+            this.allowAlpha = allowAlpha;
+            this.preferPreRelease = preferPreRelease;
+            this.preferAlpha = preferAlpha;
+            this.preferLatest = preferLatest;
+        }
+
+        private boolean allowsType(String type) {
+            if (type == null) return allowAlpha;
+            String t = type.toLowerCase(Locale.ROOT);
+            if (t.equals("release") || t.equals("stable")) {
+                return true;
+            }
+            if (t.equals("beta") || t.equals("prerelease") || t.equals("pre-release") || t.equals("preview") || t.equals("rc")) {
+                return allowPreRelease;
+            }
+            if (t.equals("alpha") || t.equals("snapshot") || t.equals("nightly") || t.equals("dev") || t.equals("bleeding")) {
+                return allowAlpha;
+            }
+            return allowAlpha;
+        }
+
+        private boolean isReleaseOnly() {
+            return !allowPreRelease && !allowAlpha && !preferPreRelease && !preferAlpha && !preferLatest;
+        }
+    }
+
+
     private boolean handleModrinthDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
         try {
             String[] parts = value.split("/");
@@ -470,8 +826,14 @@ public class PluginUpdater {
 
 
             String getRegex = null;
+            String query = null;
             int qIndex = value.indexOf('?');
-            if (qIndex != -1) getRegex = queryParam(value.substring(qIndex + 1), "get");
+            if (qIndex != -1) {
+                query = value.substring(qIndex + 1);
+                getRegex = queryParam(query, "get");
+            }
+
+            ReleasePreference modrinthPreference = parseReleasePreference(query, UpdateOptions.allowPreReleaseDefault);
 
             boolean useRegex = getRegex != null && !getRegex.isEmpty();
             Pattern getPattern = null;
@@ -556,7 +918,11 @@ public class PluginUpdater {
                             }
                         }
                     } else {
-                        fallbackFile = pickBestFallback(fallbackFile, version, platform);
+                        String versionType = version.path("version_type").asText("release");
+                        if (!modrinthPreference.allowsType(versionType)) {
+                            continue;
+                        }
+                        fallbackFile = pickBestFallback(fallbackFile, version, platform, modrinthPreference);
                     }
                 }
 
@@ -581,7 +947,8 @@ public class PluginUpdater {
     private static JsonNode pickBestFallback(
             JsonNode currentBestFile,
             JsonNode version,
-            String platform
+            String platform,
+            ReleasePreference preference
     ) {
         JsonNode files = version.get("files");
         JsonNode chosen = null;
@@ -591,8 +958,7 @@ public class PluginUpdater {
         if (chosen == null) chosen = files.get(0);
 
         String vt = version.path("version_type").asText("release");
-        boolean isRelease = "release".equalsIgnoreCase(vt);
-        long typeBoost = isRelease ? 1_000_000_000_000_000L : 0L;
+        long typeBoost = computeTypeBoost(vt, preference);
 
         long when = 0L;
         String published = version.path("date_published").asText(null);
@@ -659,7 +1025,7 @@ public class PluginUpdater {
                 com.fasterxml.jackson.databind.node.ObjectNode annotated = f.deepCopy();
                 annotated.put("__score", s);
                 annotated.put("__published", published == null ? "" : published);
-                annotated.put("__version_type", isRelease ? "release" : version.path("version_type").asText(""));
+                annotated.put("__version_type", vt == null ? "" : vt);
                 best = annotated;
                 bestScore = s;
             }
@@ -1059,8 +1425,8 @@ public class PluginUpdater {
             }
 
             String regex = queryParam(query, "get");
-            String preParam = queryParam(query, "prerelease");
-            boolean allowPre = preParam != null ? Boolean.parseBoolean(preParam) : UpdateOptions.allowPreReleaseDefault;
+            ReleasePreference githubPreference = parseReleasePreference(query, UpdateOptions.allowPreReleaseDefault);
+            boolean allowPre = githubPreference.allowPreRelease || githubPreference.allowAlpha;
 
             if (forceBuild) {
                 return attemptSourceBuild(repoPath, entry, value, key, false, true);
@@ -1190,7 +1556,11 @@ public class PluginUpdater {
         if (value.contains(multiIdentifier)) {
             int startIndex = value.indexOf(multiIdentifier);
             int endIndex = value.indexOf("]", startIndex);
-            artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex));
+            try {
+                artifactNum = Integer.parseInt(value.substring(startIndex + 1, endIndex).trim());
+            } catch (NumberFormatException ignored) {
+                artifactNum = 1;
+            }
             subString = value.substring(0, value.indexOf(multiIdentifier));
         } else {
             int idx = value.indexOf("/dev");
@@ -1198,33 +1568,74 @@ public class PluginUpdater {
         }
 
         repoPath = getGitHubRepoLocation(subString);
+        if (repoPath == null || repoPath.isEmpty()) {
+            logger.info("Repository path not found.");
+            return false;
+        }
 
         String apiUrl = "https://api.github.com/repos" + repoPath + "/actions/artifacts";
         JsonNode node = fetchGithubJson(apiUrl, key);
-        if (node == null) {
+        if (node == null || node.get("artifacts") == null) {
             logger.info("Failed to query GitHub actions artifacts for " + repoPath + "; check token/rate limit.");
             return false;
         }
 
         String getRegexD = queryParam(queryD, "get");
-        String downloadUrl = null;
-        int times = 0;
-        for (JsonNode artifact : node.get("artifacts")) {
-            if (artifact.has("name")) {
-                if (getRegexD != null && artifact.get("name").asText().matches(getRegexD)) {
-                    downloadUrl = artifact.get("archive_download_url").asText();
-                    break;
-                }
-                times++;
-            }
-            if (times == artifactNum) {
-                downloadUrl = artifact.get("archive_download_url").asText();
-                break;
+        Pattern artifactPattern = null;
+        if (getRegexD != null && !getRegexD.isEmpty()) {
+            try {
+                artifactPattern = Pattern.compile(getRegexD);
+            } catch (PatternSyntaxException ex) {
+                logger.info("Invalid get-regex for GitHub Actions artifact selection (" + getRegexD + ") : " + ex.getMessage());
+                return false;
             }
         }
 
-        if (downloadUrl == null) {
-            logger.info("Failed to find the specified artifact number in the workflow artifacts.");
+        String artifactOverride = firstNonNull(
+                queryParam(queryD, "artifact"),
+                queryParam(queryD, "index"),
+                queryParam(queryD, "zip")
+        );
+        if (artifactOverride != null) {
+            int parsed = parsePositiveInt(artifactOverride.trim(), -1);
+            if (parsed > 0) {
+                artifactNum = parsed;
+            }
+        }
+        if (artifactNum < 1) artifactNum = 1;
+
+        List<JsonNode> candidates = new ArrayList<>();
+        for (JsonNode artifact : node.get("artifacts")) {
+            if (artifact == null) continue;
+            if (artifact.path("expired").asBoolean(false)) continue;
+            String downloadUrl = artifact.path("archive_download_url").asText(null);
+            if (downloadUrl == null || downloadUrl.isEmpty()) continue;
+            JsonNode nameNode = artifact.get("name");
+            String name = nameNode != null ? nameNode.asText("") : "";
+            if (artifactPattern != null && (name == null || !artifactPattern.matcher(name).matches())) {
+                continue;
+            }
+            candidates.add(artifact);
+        }
+
+        if (candidates.isEmpty()) {
+            if (artifactPattern != null) {
+                logger.info("No GitHub Actions artifacts matched the provided get-regex for " + repoPath + ".");
+            } else {
+                logger.info("No GitHub Actions artifacts available for " + repoPath + ".");
+            }
+            return false;
+        }
+
+        if (artifactNum > candidates.size()) {
+            logger.info("Requested artifact number " + artifactNum + " exceeds available GitHub Actions artifacts (" + candidates.size() + ").");
+            return false;
+        }
+
+        JsonNode selectedArtifact = candidates.get(artifactNum - 1);
+        String downloadUrl = selectedArtifact.path("archive_download_url").asText(null);
+        if (downloadUrl == null || downloadUrl.isEmpty()) {
+            logger.info("Selected GitHub Actions artifact did not provide a download URL.");
             return false;
         }
 
