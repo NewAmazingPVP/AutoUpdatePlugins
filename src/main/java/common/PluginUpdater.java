@@ -529,7 +529,7 @@ public class PluginUpdater {
         String normalizedPlatform = platform == null ? "PAPER" : platform.toUpperCase(Locale.ROOT);
         ObjectMapper mapper = new ObjectMapper();
         int offset = 0;
-        long bestScore = Long.MIN_VALUE;
+        int bestRank = Integer.MAX_VALUE;
         String bestVersion = null;
 
         while (offset < 250) {
@@ -559,15 +559,21 @@ public class PluginUpdater {
                 }
 
                 String typeKey = hangarTypeKey(channelName);
-                if (!preference.allowsType(typeKey)) {
+                int rank = preference.rank(typeKey);
+                if (rank == Integer.MAX_VALUE) {
                     continue;
                 }
 
-                long when = parseInstantMillis(version.path("createdAt").asText(null));
-                long score = computeTypeBoost(typeKey, preference) + when;
-                if (score > bestScore) {
-                    bestScore = score;
+                if (preference.preferLatest) {
+                    return versionName;
+                }
+
+                if (rank < bestRank) {
+                    bestRank = rank;
                     bestVersion = versionName;
+                    if (rank == 0) {
+                        return versionName;
+                    }
                 }
             }
 
@@ -590,58 +596,6 @@ public class PluginUpdater {
             return "beta";
         }
         return "other";
-    }
-
-    private long parseInstantMillis(String iso) {
-        if (iso == null || iso.isEmpty()) {
-            return 0L;
-        }
-        try {
-            return java.time.Instant.parse(iso).toEpochMilli();
-        } catch (Throwable ignored) {
-            return 0L;
-        }
-    }
-
-    private static long computeTypeBoost(String versionType, ReleasePreference preference) {
-        if (preference == null) return 0L;
-        if (versionType == null) versionType = "";
-        String vt = versionType.toLowerCase(Locale.ROOT);
-        if (preference.preferLatest) {
-            return 0L;
-        }
-        switch (vt) {
-            case "release":
-            case "stable":
-                long releaseBase = 1_000_000_000_000_000L;
-                if (preference.preferPreRelease) releaseBase -= 100_000_000_000_000L;
-                if (preference.preferAlpha) releaseBase -= 200_000_000_000_000L;
-                return releaseBase;
-            case "beta":
-            case "rc":
-            case "prerelease":
-            case "pre-release":
-            case "preview":
-                if (!preference.allowPreRelease) return -1_000_000_000_000_000L;
-                long preBase = 900_000_000_000_000L;
-                if (preference.preferPreRelease) preBase += 150_000_000_000_000L;
-                if (preference.preferAlpha) preBase -= 50_000_000_000_000L;
-                return preBase;
-            case "alpha":
-            case "snapshot":
-            case "nightly":
-            case "dev":
-            case "bleeding":
-                if (!preference.allowAlpha) return -1_200_000_000_000_000L;
-                long alphaBase = 880_000_000_000_000L;
-                if (preference.preferAlpha) alphaBase += 200_000_000_000_000L;
-                return alphaBase;
-            default:
-                if (!preference.allowAlpha) return -800_000_000_000_000L;
-                long other = 700_000_000_000_000L;
-                if (preference.preferAlpha) other += 100_000_000_000_000L;
-                return other;
-        }
     }
 
     private ReleasePreference parseReleasePreference(String query, boolean defaultAllowPreRelease) {
@@ -796,22 +750,81 @@ public class PluginUpdater {
         }
 
         private boolean allowsType(String type) {
-            if (type == null) return allowAlpha;
-            String t = type.toLowerCase(Locale.ROOT);
-            if (t.equals("release") || t.equals("stable")) {
-                return true;
+            return rank(type) != Integer.MAX_VALUE;
+        }
+
+        private int rank(String type) {
+            if (preferLatest) {
+                return isAllowed(type) ? 0 : Integer.MAX_VALUE;
             }
-            if (t.equals("beta") || t.equals("prerelease") || t.equals("pre-release") || t.equals("preview") || t.equals("rc")) {
-                return allowPreRelease;
+
+            ReleaseKind kind = ReleaseKind.from(type);
+            if (!isAllowed(kind)) return Integer.MAX_VALUE;
+
+            switch (kind) {
+                case ALPHA:
+                    if (preferAlpha) return 0;
+                    if (preferPreRelease) return 1;
+                    return 2;
+                case BETA:
+                    if (preferPreRelease && !preferAlpha) return 0;
+                    if (preferAlpha) return allowAlpha ? 1 : 2;
+                    return allowPreRelease ? 1 : Integer.MAX_VALUE;
+                case RELEASE:
+                    if (preferAlpha) return 2;
+                    if (preferPreRelease) return 2;
+                    return 0;
+                case OTHER:
+                    if (preferAlpha) return 3;
+                    if (preferPreRelease) return allowAlpha ? 2 : Integer.MAX_VALUE;
+                    return allowAlpha ? 3 : Integer.MAX_VALUE;
+                default:
+                    return Integer.MAX_VALUE;
             }
-            if (t.equals("alpha") || t.equals("snapshot") || t.equals("nightly") || t.equals("dev") || t.equals("bleeding")) {
-                return allowAlpha;
+        }
+
+        private boolean isAllowed(String rawType) {
+            return isAllowed(ReleaseKind.from(rawType));
+        }
+
+        private boolean isAllowed(ReleaseKind kind) {
+            switch (kind) {
+                case RELEASE:
+                    return true;
+                case BETA:
+                    return allowPreRelease;
+                case ALPHA:
+                case OTHER:
+                    return allowAlpha;
+                default:
+                    return false;
             }
-            return allowAlpha;
         }
 
         private boolean isReleaseOnly() {
             return !allowPreRelease && !allowAlpha && !preferPreRelease && !preferAlpha && !preferLatest;
+        }
+    }
+
+    private enum ReleaseKind {
+        RELEASE,
+        BETA,
+        ALPHA,
+        OTHER;
+
+        static ReleaseKind from(String raw) {
+            if (raw == null) return OTHER;
+            String value = raw.toLowerCase(Locale.ROOT);
+            if (value.contains("release") || value.contains("stable") || value.contains("default")) {
+                return RELEASE;
+            }
+            if (value.contains("beta") || value.contains("rc") || value.contains("pre")) {
+                return BETA;
+            }
+            if (value.contains("alpha") || value.contains("snapshot") || value.contains("nightly") || value.contains("dev") || value.contains("bleeding")) {
+                return ALPHA;
+            }
+            return OTHER;
         }
     }
 
@@ -951,21 +964,16 @@ public class PluginUpdater {
             ReleasePreference preference
     ) {
         JsonNode files = version.get("files");
-        JsonNode chosen = null;
-        for (JsonNode f : files) {
-            if (f.path("primary").asBoolean(false)) { chosen = f; break; }
-        }
-        if (chosen == null) chosen = files.get(0);
 
         String vt = version.path("version_type").asText("release");
-        long typeBoost = computeTypeBoost(vt, preference);
-
-        long when = 0L;
-        String published = version.path("date_published").asText(null);
-        if (published != null) {
-            try { when = java.time.Instant.parse(published).toEpochMilli(); } catch (Throwable ignored) {}
+        int rank = preference.rank(vt);
+        if (rank == Integer.MAX_VALUE) {
+            return currentBestFile;
         }
-        long baseScore = typeBoost + when;
+
+        if (preference.preferLatest && currentBestFile != null) {
+            return currentBestFile;
+        }
 
         String p = platform == null ? "" : platform.toLowerCase();
 
@@ -991,46 +999,51 @@ public class PluginUpdater {
 
         String[] avoidMods = new String[] { "fabric", "quilt", "forge", "neoforge", ".mrpack" };
 
-        com.fasterxml.jackson.databind.JsonNode best = currentBestFile;
-        long bestScore = currentBestFile != null
-                ? currentBestFile.path("__score").asLong(Long.MIN_VALUE)
-                : Long.MIN_VALUE;
-
-        for (com.fasterxml.jackson.databind.JsonNode f : files) {
+        JsonNode chosen = null;
+        int bestFileScore = Integer.MIN_VALUE;
+        for (JsonNode f : files) {
             if (!f.has("url")) continue;
+            int fileScore = 0;
+            if (f.path("primary").asBoolean(false)) {
+                fileScore += 100;
+            }
             String fname = f.path("filename").asText("").toLowerCase();
-            boolean primary = f.path("primary").asBoolean(false);
-
-            long s = baseScore;
-            if (primary) s += 5_000_000_000_000L;
-
-            boolean matchedPlatform = false;
             for (String t : want) {
                 if (!t.isEmpty() && fname.contains(t)) {
-                    s += 200_000_000_000_000L;
-                    matchedPlatform = true;
+                    fileScore += 75;
                     break;
                 }
             }
-            if (!matchedPlatform) {
-                for (String t : avoidMods) {
-                    if (fname.contains(t)) {
-                        s -= 100_000_000_000_000L;
-                        break;
-                    }
+            for (String t : avoidMods) {
+                if (fname.contains(t)) {
+                    fileScore -= 75;
+                    break;
                 }
             }
-
-            if (s > bestScore) {
-                com.fasterxml.jackson.databind.node.ObjectNode annotated = f.deepCopy();
-                annotated.put("__score", s);
-                annotated.put("__published", published == null ? "" : published);
-                annotated.put("__version_type", vt == null ? "" : vt);
-                best = annotated;
-                bestScore = s;
+            if (fileScore > bestFileScore) {
+                bestFileScore = fileScore;
+                chosen = f;
             }
         }
-        return best;
+
+        if (chosen == null) {
+            chosen = files.get(0);
+        }
+
+        com.fasterxml.jackson.databind.node.ObjectNode annotated = chosen.deepCopy();
+        annotated.put("__rank", rank);
+        annotated.put("__version_type", vt == null ? "" : vt);
+        if (currentBestFile == null) {
+            return annotated;
+        }
+
+        int currentRank = currentBestFile.path("__rank").asInt(Integer.MAX_VALUE);
+        if (rank < currentRank) {
+            return annotated;
+        }
+
+        // If ranks are equal, keep the first (newest) candidate.
+        return currentBestFile;
     }
 
 

@@ -46,7 +46,7 @@
 ## Highlights
 
 * **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
-* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset — works for both GitHub and Jenkins artifacts), `?prerelease=true`, `?autobuild=true` (force source build) to precisely target the artifact you want.
+* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset — works for both GitHub and Jenkins artifacts), `?artifact=2` for GitHub Actions bundles, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha`, `?autobuild=true` — mix and match to land on the exact build you need.
 * **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or existing values.
 * **HTTP flexibility.** Add custom headers, rotate User-Agents, and route through proxies when needed.
 * **Performance built-in.**
@@ -68,12 +68,12 @@
 
 | Source                | Release/Build Discovery | Notes / Selectors Supported                                |
 | --------------------- | ----------------------- | ---------------------------------------------------------- |
-| **GitHub**            | Releases & Actions      | `[N]`, `?get=regex`, `?prerelease=true`, `?autobuild=true` |
+| **GitHub**            | Releases & Actions      | `[N]`, `?artifact=2`, `?get=regex`, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?autobuild=true` |
 | **Jenkins**           | Latest build artifacts  | `[N]`, `?get=regex`                                        |
 | **SpigotMC (Spiget)** | Resource page URL       | Auto-resolves latest                                       |
 | **dev.bukkit**        | Project page            | Auto-resolves latest                                       |
-| **Modrinth**          | Project/version URL     | `?get=regex`                                               |
-| **Hangar**            | Project/releases        | `?get=regex`                                               |
+| **Modrinth**          | Project/version URL     | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`  |
+| **Hangar**            | Project/releases        | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha` |
 | **BusyBiscuit**       | Project index           | Auto-resolves                                              |
 | **blob.build**        | Build artifacts         | `?get=regex`                                               |
 | **Guizhanss v2**      | Project index           | Auto-resolves                                              |
@@ -368,10 +368,11 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
   ```
   MyPlugin: "https://github.com/Owner/MyPlugin[2]?get=.*spigot.*\\.jar"
   ```
-* **GitHub Actions (force build from source if no jar):**
+* **GitHub Actions (latest alpha artifact, fallback to source build):**
 
   ```
-  MyActionsPlugin: "https://github.com/Owner/MyActionsPlugin?autobuild=true"
+  MyActionsPlugin: "https://github.com/Owner/MyActionsPlugin/actions?alpha=true&artifact=1"
+  MyActionsPluginSource: "https://github.com/Owner/MyActionsPlugin?autobuild=true"
   ```
 * **Jenkins (match shaded jar; select by index with `[N]`):**
 
@@ -390,15 +391,15 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
   ```
   Vault: "https://dev.bukkit.org/projects/vault"
   ```
-* **Modrinth (match platform flavor):**
+* **Modrinth (match platform flavor, latest alpha build):**
 
   ```
-  Fancy: "https://modrinth.com/plugin/fancy?get=.*(paper|spigot).*\\.jar"
+  Fancy: "https://modrinth.com/plugin/fancy?alpha=true&get=.*(paper|spigot).*\\.jar"
   ```
-* **Hangar:**
+* **Hangar (snapshot channel):**
 
   ```
-  HangarThing: "https://hangar.papermc.io/Owner/Project?get=.*spigot.*\\.jar"
+  HangarThing: "https://hangar.papermc.io/Owner/Project?channel=Alpha&get=.*spigot.*\\.jar"
   ```
 * **CurseForge (filter file name):**
 
@@ -428,7 +429,7 @@ A: Add a **`?get=regex`** or use **`[N]`** to pick an asset index. Confirm the r
 A: Increase `readTimeoutMs`; decrease `maxParallel`; or set `perDownloadTimeoutSec` and tune `maxRetries`/backoff.
 
 **Q: Need pre-releases.**
-A: Append `?prerelease=true` to the URL (and ensure `behavior.allowPreRelease: true` if you want that globally).
+A: Use per-link flags like `?prerelease=true`, `?beta=true`, `?alpha=true`, or `?latest=true` (works on GitHub, Modrinth, and Hangar). Hangar also respects `?channel=Alpha`/`Beta`. Set `behavior.allowPreRelease: true` if you want this to be the default.
 
 **Q: Behind a corporate proxy.**
 A: Configure `proxy.type/host/port`. If your proxy MITM-s TLS, ensure the Java trust store has the proxy CA.

@@ -53,7 +53,7 @@ behavior:
   zipFileCheck: true
   # Skip replacing an existing plugin if the new jar has the same MD5
   ignoreDuplicates: true
-  # Allow GitHub pre-releases by default for release queries.
+  # Allow GitHub/Modrinth/Hangar pre-releases by default for release queries.
   allowPreRelease: false
   # Enable source-build fallback for GitHub repositories.
   autoCompile:
@@ -122,5 +122,8 @@ rollback:
 #
 # Tips:
 # - Select assets: append [N] to pick the Nth asset or use ?get=<regex> to match by filename.
+# - GitHub Actions ZIPs: use ?artifact=2 (or ?index=/ ?zip=) to pick a specific build, default is the first.
 # - Pre-releases: set behavior.allowPreRelease: true or append ?prerelease=true on a GitHub link.
+# - Channel flags: ?beta=true, ?alpha=true, ?latest=true, or ?channel=Alpha/Beta for Hangar.
+# - Modrinth/Hangar obey the same flags (?alpha, ?beta, ?latest) to pick non-release builds when desired.
 # - Force source build from GitHub: append ?autobuild=true to a GitHub repo URL.
