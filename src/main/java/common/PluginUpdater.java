@@ -31,6 +31,7 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
@@ -288,7 +289,7 @@ public class PluginUpdater {
             } else if (value.contains("spigotmc.org")) {
                 return handleSpigotDownload(key, entry, value);
             } else if (value.contains("github.com")) {
-                return handleGitHubDownload(key, entry, value);
+                return handleGitHubDownload(platform, key, entry, value);
             } else if (value.contains("https://ci.")) {
                 return handleJenkinsDownload(key, entry, value);
             } else if (value.contains("modrinth.com")) {
@@ -508,7 +509,6 @@ public class PluginUpdater {
                 }
             }
         } catch (Exception ignored) {
-            // treat as plain slug below
         }
 
         String cleaned = trimmed.replaceAll("^/+|/+$", "");
@@ -599,56 +599,63 @@ public class PluginUpdater {
     }
 
     private ReleasePreference parseReleasePreference(String query, boolean defaultAllowPreRelease) {
-        boolean allowPreRelease = defaultAllowPreRelease;
-        boolean allowAlpha = defaultAllowPreRelease;
-        boolean preferPreRelease = false;
-        boolean preferAlpha = false;
+        java.util.List<ReleaseKind> order = new java.util.ArrayList<>(java.util.Arrays.asList(
+                ReleaseKind.RELEASE,
+                ReleaseKind.BETA,
+                ReleaseKind.ALPHA,
+                ReleaseKind.OTHER
+        ));
+        java.util.EnumSet<ReleaseKind> allowed = java.util.EnumSet.of(ReleaseKind.RELEASE);
+        if (defaultAllowPreRelease) {
+            allowed.add(ReleaseKind.BETA);
+            allowed.add(ReleaseKind.ALPHA);
+        }
+        allowed.add(ReleaseKind.OTHER);
+
         boolean preferLatest = false;
 
         if (query != null) {
-            String preParam = queryParam(query, "prerelease");
-            if (preParam != null) {
-                boolean val = parseBooleanFlag(preParam, true);
-                allowPreRelease = val;
-                if (val) preferPreRelease = true;
-            }
-
-            String preDash = queryParam(query, "pre-release");
-            if (preDash != null) {
-                boolean val = parseBooleanFlag(preDash, true);
-                allowPreRelease = val;
-                if (val) preferPreRelease = true;
-            }
-
-            String betaParam = queryParam(query, "beta");
-            if (betaParam != null) {
-                boolean val = parseBooleanFlag(betaParam, true);
-                allowPreRelease = val || allowPreRelease;
-                if (val) preferPreRelease = true;
-            }
-
-            String alphaParam = queryParam(query, "alpha");
-            if (alphaParam != null) {
-                boolean val = parseBooleanFlag(alphaParam, true);
-                if (val) {
-                    allowPreRelease = true;
-                    allowAlpha = true;
-                    preferAlpha = true;
+            Boolean preFlag = optionalBoolean(queryParam(query, "prerelease"), true);
+            if (preFlag == null) preFlag = optionalBoolean(queryParam(query, "pre-release"), true);
+            if (preFlag != null) {
+                if (preFlag) {
+                    allowed.add(ReleaseKind.BETA);
+                    allowed.add(ReleaseKind.ALPHA);
+                    preferLatest = true;
+                    promote(order, ReleaseKind.ALPHA);
+                    promote(order, ReleaseKind.BETA);
                 } else {
-                    allowAlpha = false;
-                    preferAlpha = false;
+                    allowed.remove(ReleaseKind.BETA);
+                    allowed.remove(ReleaseKind.ALPHA);
                 }
             }
 
-            String latestParam = queryParam(query, "latest");
-            if (latestParam != null) {
-                boolean val = parseBooleanFlag(latestParam, true);
-                if (val) {
-                    allowPreRelease = true;
-                    allowAlpha = true;
-                    preferLatest = true;
+            Boolean betaFlag = optionalBoolean(queryParam(query, "beta"), true);
+            if (betaFlag != null) {
+                if (betaFlag) {
+                    allowed.add(ReleaseKind.BETA);
+                    promote(order, ReleaseKind.BETA);
                 } else {
-                    preferLatest = false;
+                    allowed.remove(ReleaseKind.BETA);
+                }
+            }
+
+            Boolean alphaFlag = optionalBoolean(queryParam(query, "alpha"), true);
+            if (alphaFlag != null) {
+                if (alphaFlag) {
+                    allowed.add(ReleaseKind.ALPHA);
+                    promote(order, ReleaseKind.ALPHA);
+                } else {
+                    allowed.remove(ReleaseKind.ALPHA);
+                }
+            }
+
+            Boolean latestFlag = optionalBoolean(queryParam(query, "latest"), true);
+            if (latestFlag != null) {
+                preferLatest = latestFlag;
+                if (latestFlag) {
+                    allowed.add(ReleaseKind.BETA);
+                    allowed.add(ReleaseKind.ALPHA);
                 }
             }
 
@@ -657,43 +664,51 @@ public class PluginUpdater {
                 String ch = channelParam.trim().toLowerCase(Locale.ROOT);
                 switch (ch) {
                     case "release":
-                        allowPreRelease = false;
-                        allowAlpha = false;
-                        preferPreRelease = false;
-                        preferAlpha = false;
+                        allowed.clear();
+                        allowed.add(ReleaseKind.RELEASE);
+                        order = new java.util.ArrayList<>(java.util.Collections.singletonList(ReleaseKind.RELEASE));
                         preferLatest = false;
                         break;
                     case "beta":
                     case "prerelease":
                     case "pre-release":
                     case "preview":
-                        allowPreRelease = true;
-                        preferPreRelease = true;
+                        allowed.clear();
+                        allowed.add(ReleaseKind.BETA);
+                        order = new java.util.ArrayList<>(java.util.Collections.singletonList(ReleaseKind.BETA));
+                        preferLatest = true;
                         break;
                     case "alpha":
                     case "snapshot":
-                        allowPreRelease = true;
-                        allowAlpha = true;
-                        preferAlpha = true;
+                        allowed.clear();
+                        allowed.add(ReleaseKind.ALPHA);
+                        order = new java.util.ArrayList<>(java.util.Collections.singletonList(ReleaseKind.ALPHA));
+                        preferLatest = true;
                         break;
                     case "latest":
-                        allowPreRelease = true;
-                        allowAlpha = true;
+                        allowed.add(ReleaseKind.BETA);
+                        allowed.add(ReleaseKind.ALPHA);
                         preferLatest = true;
                         break;
                 }
             }
         }
 
-        if (!allowPreRelease) {
-            allowAlpha = false;
-            preferPreRelease = false;
-        }
-        if (!allowAlpha) {
-            preferAlpha = false;
+        if (allowed.isEmpty()) {
+            allowed.add(ReleaseKind.RELEASE);
         }
 
-        return new ReleasePreference(allowPreRelease, allowAlpha, preferPreRelease, preferAlpha, preferLatest);
+        java.util.List<ReleaseKind> priority = new java.util.ArrayList<>();
+        for (ReleaseKind kind : order) {
+            if (allowed.contains(kind) && !priority.contains(kind)) {
+                priority.add(kind);
+            }
+        }
+        if (priority.isEmpty()) {
+            priority.add(ReleaseKind.RELEASE);
+        }
+
+        return new ReleasePreference(priority, preferLatest);
     }
 
     private boolean parseBooleanFlag(String raw, boolean defaultWhenBlank) {
@@ -734,18 +749,56 @@ public class PluginUpdater {
         }
     }
 
+    private static long parseIsoInstantMillis(String raw) {
+        if (raw == null) return 0L;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return 0L;
+        try {
+            return Instant.parse(trimmed).toEpochMilli();
+        } catch (Exception ignored) {
+        }
+        try {
+            return DatatypeConverter.parseDateTime(trimmed).getTimeInMillis();
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
+    private int scoreArtifactName(String name, String platform) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        String p = platform == null ? "" : platform.toLowerCase(Locale.ROOT);
+        boolean preferFabric = p.contains("fabric") || p.contains("quilt");
+        boolean preferForge = p.contains("forge") || p.contains("neoforge");
+        boolean preferServer = !(preferFabric || preferForge);
+
+        int score = 0;
+        if (n.contains("bukkit") || n.contains("paper") || n.contains("spigot") || n.contains("folia") || n.contains("purpur")) {
+            score += preferFabric ? -10 : 40;
+        }
+        if (n.contains("velocity") || n.contains("bungee") || n.contains("waterfall") || n.contains("proxy")) {
+            score += preferFabric ? -5 : 20;
+        }
+        if (n.contains("fabric") || n.contains("quilt")) {
+            score += preferFabric ? 35 : -20;
+        }
+        if (n.contains("forge") || n.contains("neoforge")) {
+            score += preferForge ? 25 : -10;
+        }
+        if (n.contains("client")) {
+            score -= preferServer ? 15 : 0;
+        }
+        if (n.contains("server")) {
+            score += 5;
+        }
+        return score;
+    }
+
     private static final class ReleasePreference {
-        private final boolean allowPreRelease;
-        private final boolean allowAlpha;
-        private final boolean preferPreRelease;
-        private final boolean preferAlpha;
+        private final java.util.List<ReleaseKind> priority;
         private final boolean preferLatest;
 
-        private ReleasePreference(boolean allowPreRelease, boolean allowAlpha, boolean preferPreRelease, boolean preferAlpha, boolean preferLatest) {
-            this.allowPreRelease = allowPreRelease;
-            this.allowAlpha = allowAlpha;
-            this.preferPreRelease = preferPreRelease;
-            this.preferAlpha = preferAlpha;
+        private ReleasePreference(java.util.List<ReleaseKind> priority, boolean preferLatest) {
+            this.priority = priority;
             this.preferLatest = preferLatest;
         }
 
@@ -754,55 +807,22 @@ public class PluginUpdater {
         }
 
         private int rank(String type) {
-            if (preferLatest) {
-                return isAllowed(type) ? 0 : Integer.MAX_VALUE;
-            }
-
             ReleaseKind kind = ReleaseKind.from(type);
-            if (!isAllowed(kind)) return Integer.MAX_VALUE;
-
-            switch (kind) {
-                case ALPHA:
-                    if (preferAlpha) return 0;
-                    if (preferPreRelease) return 1;
-                    return 2;
-                case BETA:
-                    if (preferPreRelease && !preferAlpha) return 0;
-                    if (preferAlpha) return allowAlpha ? 1 : 2;
-                    return allowPreRelease ? 1 : Integer.MAX_VALUE;
-                case RELEASE:
-                    if (preferAlpha) return 2;
-                    if (preferPreRelease) return 2;
-                    return 0;
-                case OTHER:
-                    if (preferAlpha) return 3;
-                    if (preferPreRelease) return allowAlpha ? 2 : Integer.MAX_VALUE;
-                    return allowAlpha ? 3 : Integer.MAX_VALUE;
-                default:
-                    return Integer.MAX_VALUE;
-            }
-        }
-
-        private boolean isAllowed(String rawType) {
-            return isAllowed(ReleaseKind.from(rawType));
-        }
-
-        private boolean isAllowed(ReleaseKind kind) {
-            switch (kind) {
-                case RELEASE:
-                    return true;
-                case BETA:
-                    return allowPreRelease;
-                case ALPHA:
-                case OTHER:
-                    return allowAlpha;
-                default:
-                    return false;
-            }
+            int idx = priority.indexOf(kind);
+            return idx == -1 ? Integer.MAX_VALUE : idx;
         }
 
         private boolean isReleaseOnly() {
-            return !allowPreRelease && !allowAlpha && !preferPreRelease && !preferAlpha && !preferLatest;
+            return !preferLatest && priority.size() == 1 && priority.get(0) == ReleaseKind.RELEASE;
+        }
+
+        private boolean allowsNonRelease() {
+            for (ReleaseKind kind : priority) {
+                if (kind != ReleaseKind.RELEASE) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -826,6 +846,18 @@ public class PluginUpdater {
             }
             return OTHER;
         }
+    }
+
+    private void promote(java.util.List<ReleaseKind> order, ReleaseKind kind) {
+        order.remove(kind);
+        order.add(0, kind);
+    }
+
+    private Boolean optionalBoolean(String raw, boolean defaultWhenBlank) {
+        if (raw == null) {
+            return null;
+        }
+        return parseBooleanFlag(raw, defaultWhenBlank);
     }
 
 
@@ -971,9 +1003,7 @@ public class PluginUpdater {
             return currentBestFile;
         }
 
-        if (preference.preferLatest && currentBestFile != null) {
-            return currentBestFile;
-        }
+        long publishedAt = parseIsoInstantMillis(version.path("date_published").asText(null));
 
         String p = platform == null ? "" : platform.toLowerCase();
 
@@ -1033,16 +1063,33 @@ public class PluginUpdater {
         com.fasterxml.jackson.databind.node.ObjectNode annotated = chosen.deepCopy();
         annotated.put("__rank", rank);
         annotated.put("__version_type", vt == null ? "" : vt);
+        annotated.put("__published", publishedAt);
         if (currentBestFile == null) {
             return annotated;
+        }
+
+        if (preference.preferLatest) {
+            long currentPublished = currentBestFile.path("__published").asLong(Long.MIN_VALUE);
+            if (publishedAt > currentPublished) {
+                return annotated;
+            }
+            if (publishedAt == currentPublished && rank < currentBestFile.path("__rank").asInt(Integer.MAX_VALUE)) {
+                return annotated;
+            }
+            return currentBestFile;
         }
 
         int currentRank = currentBestFile.path("__rank").asInt(Integer.MAX_VALUE);
         if (rank < currentRank) {
             return annotated;
         }
+        if (rank == currentRank) {
+            long currentPublished = currentBestFile.path("__published").asLong(Long.MIN_VALUE);
+            if (publishedAt > currentPublished) {
+                return annotated;
+            }
+        }
 
-        // If ranks are equal, keep the first (newest) candidate.
         return currentBestFile;
     }
 
@@ -1400,10 +1447,10 @@ public class PluginUpdater {
         }
     }
 
-    private boolean handleGitHubDownload(String key, Map.Entry<String, String> entry, String value) {
+    private boolean handleGitHubDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
         value = value.replace("/actions/", "/dev").replace("/actions", "/dev");
         if (value.contains("/dev")) {
-            return handleGitHubDevDownload(key, entry, value);
+            return handleGitHubDevDownload(platform, key, entry, value);
         }
 
         String repoPath = null;
@@ -1439,7 +1486,7 @@ public class PluginUpdater {
 
             String regex = queryParam(query, "get");
             ReleasePreference githubPreference = parseReleasePreference(query, UpdateOptions.allowPreReleaseDefault);
-            boolean allowPre = githubPreference.allowPreRelease || githubPreference.allowAlpha;
+            boolean allowPre = githubPreference.allowsNonRelease();
 
             if (forceBuild) {
                 return attemptSourceBuild(repoPath, entry, value, key, false, true);
@@ -1555,7 +1602,7 @@ public class PluginUpdater {
     }
 
 
-    private boolean handleGitHubDevDownload(String key, Map.Entry<String, String> entry, String value) {
+    private boolean handleGitHubDevDownload(String platform, String key, Map.Entry<String, String> entry, String value) {
         String repoPath;
         int artifactNum = 1;
         String multiIdentifier = "[";
@@ -1639,6 +1686,22 @@ public class PluginUpdater {
             }
             return false;
         }
+
+        candidates.sort((a, b) -> {
+            long runB = parseIsoInstantMillis(b.path("workflow_run").path("created_at").asText(b.path("created_at").asText(null)));
+            long runA = parseIsoInstantMillis(a.path("workflow_run").path("created_at").asText(a.path("created_at").asText(null)));
+            int cmp = Long.compare(runB, runA);
+            if (cmp != 0) return cmp;
+
+            int scoreA = scoreArtifactName(a.path("name").asText(""), platform);
+            int scoreB = scoreArtifactName(b.path("name").asText(""), platform);
+            cmp = Integer.compare(scoreB, scoreA);
+            if (cmp != 0) return cmp;
+
+            long createdB = parseIsoInstantMillis(b.path("created_at").asText(null));
+            long createdA = parseIsoInstantMillis(a.path("created_at").asText(null));
+            return Long.compare(createdB, createdA);
+        });
 
         if (artifactNum > candidates.size()) {
             logger.info("Requested artifact number " + artifactNum + " exceeds available GitHub Actions artifacts (" + candidates.size() + ").");

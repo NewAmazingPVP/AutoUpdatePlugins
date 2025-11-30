@@ -59,6 +59,7 @@
 * **Cross-platform.** Works on **Spigot**, **Paper**, **Folia**, **Velocity**, **BungeeCord**.
 * **Safe updates.** Download ➜ validate ➜ atomic replace, staged through temp/update paths.
 * **Integrity + dedupe.** Optional zip integrity checks and MD5 comparison skip corrupted or unchanged downloads.
+* **Rollback safety net.** Snapshot the previous jar and auto-restore if the new build fails to start.
 
 ---
 
@@ -177,7 +178,7 @@ http:
   # If blank, a rotating pool of realistic User-Agents will be used.
   userAgent: ""
   # Extra request headers added to every request. Only add if you know you need it.
-  headers: []
+  headers: [ ]
   # Verify TLS certificates (set to false to trust all; only if you must)
   sslVerify: true
   # Optional pool of User-Agents; the plugin will rotate between them to avoid
@@ -200,13 +201,13 @@ behavior:
   zipFileCheck: true
   # Skip replacing an existing plugin if the new jar has the same MD5
   ignoreDuplicates: true
-  # Allow GitHub pre-releases by default for release queries.
+  # Allow GitHub/Modrinth/Hangar pre-releases by default for release queries.
   allowPreRelease: false
   # Enable source-build fallback for GitHub repositories.
   autoCompile:
     enable: false
     # Build when a release has no .jar asset (zip-only)
-    whenNoJarAsset: false
+    whenNoJarAsset: true
     # Build from source if default branch is newer than latest (pre)release by N months
     branchNewerMonths: 6
   # Verbose debug logging. Toggle with /aup debug on|off
@@ -219,6 +220,7 @@ paths:
   tempPath: ''
   updatePath: ''
   filePath: ''
+  rollbackPath: ''
 
 # Performance and reliability options
 performance:
@@ -239,6 +241,19 @@ performance:
   # Limit concurrent downloads per host to avoid 429s and improve stability
   maxPerHost: 3
 
+rollback:
+  # Keep a backup of the previous version when updating a plugin and automatically revert back on plugin load failure (experimental!)
+  enabled: false
+  # Maximum number of old versions to keep per plugin (0 = unlimited)
+  maxBackups: 3
+  # Case-insensitive regex patterns that trigger rollback when matched in logs.
+  filters:
+    - "Unsupported API version"
+    - "Could not load plugin"
+    - "Error occurred while enabling"
+    - "Unsupported MC version"
+    - "You are running an unsupported server version"
+
 # Plugins List Configuration
 # Edit the generated list.yml in this folder. Format:
 #   {FileSaveName}: {link.to.plugin}
@@ -254,10 +269,32 @@ performance:
 #
 # Tips:
 # - Select assets: append [N] to pick the Nth asset or use ?get=<regex> to match by filename.
+# - GitHub Actions ZIPs: use ?artifact=2 (or ?index=/ ?zip=) to pick a specific build, default is the first.
 # - Pre-releases: set behavior.allowPreRelease: true or append ?prerelease=true on a GitHub link.
+# - Channel flags: ?beta=true, ?alpha=true, ?latest=true, or ?channel=Alpha/Beta for Hangar.
+# - Modrinth/Hangar obey the same flags (?alpha, ?beta, ?latest) to pick non-release builds when desired.
 # - Force source build from GitHub: append ?autobuild=true to a GitHub repo URL.
 
 ```
+
+#### Safety & Recovery
+
+- `behavior.zipFileCheck`: validates `.jar` downloads extracted from archives before they ever reach the plugins directory.
+- `behavior.ignoreDuplicates`: skips deployment if the incoming jar matches the installed checksum, avoiding pointless restarts.
+- `rollback.*`: snapshots the previous jar, keeps a rotating history, and restores automatically when console output matches the configured failure patterns.
+
+#### Advanced Selectors Cheat Sheet
+
+| Flag / Selector              | Effect                                                                                  | Providers                     |
+| ---------------------------- | --------------------------------------------------------------------------------------- | ----------------------------- |
+| `?get=<regex>`               | Picks assets whose filename matches a regex                                             | GitHub, Jenkins, Modrinth, etc |
+| `[N]`                        | Chooses the N‑th asset (1-indexed)                                                      | GitHub Releases, Jenkins       |
+| `?artifact=2` / `?index=`    | Chooses the N‑th GitHub Actions artifact (defaults to 1)                                | GitHub Actions                 |
+| `?prerelease=true`           | Install the newest build regardless of stability tier                                  | GitHub, Modrinth, Hangar       |
+| `?alpha=true` / `?beta=true` | Prefer that channel while falling back to newer releases if no matching build exists   | GitHub, Modrinth, Hangar       |
+| `?latest=true`               | Same as `?prerelease=true`, but intended for explicit "always newest" behaviour        | GitHub, Modrinth, Hangar       |
+| `?channel=Alpha` / `Beta`    | Stick to a specific Hangar channel                                                      | Hangar                         |
+| `?autobuild=true`            | Trigger Gradle/Maven source builds when binaries are missing                           | GitHub                         |
 
 **Key options explained**
 
@@ -270,6 +307,7 @@ performance:
 * **`behavior.ignoreDuplicates`** — Skip replacing a plugin if the new jar has the same MD5.
 * **`behavior.useUpdateFolder`** — Stage new jars in the server’s `update/` directory for atomic swaps.
 * **`behavior.debug`** — Verbose logging toggle, also controllable via `/aup debug`.
+* **`rollback`** — Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
 * **`paths`** — Customize temp/staging/output locations (falls back to sane defaults).
 * **`performance`** — See [Performance Tuning Guide](#performance-tuning-guide).
 
@@ -294,6 +332,7 @@ EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 
 * **`[N]`** — Select the **N-th** jar asset (1-indexed) from a release or Jenkins build page. Example: `.../Essentials[3]`
 * **`?get=<regex>`** — Choose files whose names match a regex. Example: `?get=.*(paper|spigot).*\.jar`
+* **`?artifact=2`** — Pick a specific GitHub Actions artifact (defaults to the first).
 * **`?prerelease=true`** — Permit pre-releases.
 * **`?autobuild=true`** — Force a source build on GitHub even if a jar asset exists.
 
