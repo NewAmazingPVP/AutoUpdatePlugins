@@ -1,4 +1,4 @@
-# AutoUpdatePlugins
+﻿# AutoUpdatePlugins
 
 <div align="center">
 
@@ -46,6 +46,7 @@
 ## Highlights
 
 * **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
+* **Local sources.** Point at local jar files or run scripts that output a jar path for custom/patched builds.
 * **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset — works for both GitHub and Jenkins artifacts), `?artifact=2` for GitHub Actions bundles, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha`, `?autobuild=true` — mix and match to land on the exact build you need.
 * **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or existing values.
 * **HTTP flexibility.** Add custom headers, rotate User-Agents, and route through proxies when needed.
@@ -81,6 +82,8 @@
 | **MineBBS**           | Resource page           | Auto-resolves                                              |
 | **CurseForge**        | Project/files           | `?get=regex`                                               |
 | **Generic**           | Direct `.jar` link      | Exact file URL                                             |
+| **Local file**       | Local path              | `file:`, `local:`, `path:`, or absolute/relative path      |
+| **Local script**     | Script stdout path      | `script:` or `exec:` (script prints jar path to stdout)    |
 
 > **Note:** GitHub and Jenkins links both accept `[N]` to pick the **N-th** artifact on their release/build pages (1-indexed).
 > **Tip:** You can pass just the **project root URL** for most sources (e.g., a GitHub repo or Spigot resource page) and let AutoUpdatePlugins choose the latest artifact. Add selectors for precision.
@@ -212,6 +215,12 @@ behavior:
     branchNewerMonths: 6
   # Verbose debug logging. Toggle with /aup debug on|off
   debug: false
+  # Restart the server/proxy automatically after updates.
+  restartAfterUpdate: false
+  # Delay in seconds before restarting after updates.
+  restartDelaySec: 5
+  # Broadcast message before restarting (supports {delay}).
+  restartMessage: "Server restarting to apply updates."
 
 
 
@@ -265,7 +274,7 @@ rollback:
 #   EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 #
 # Supported sources: GitHub (Releases & Actions), Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar,
-# BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, plus generic pages with direct .jar links.
+# BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, local file paths, local scripts, plus generic pages with direct .jar links.
 #
 # Tips:
 # - Select assets: append [N] to pick the Nth asset or use ?get=<regex> to match by filename.
@@ -306,6 +315,7 @@ rollback:
 * **`behavior.zipFileCheck`** — Open downloaded jars/zips to ensure they aren't corrupt before install.
 * **`behavior.ignoreDuplicates`** — Skip replacing a plugin if the new jar has the same MD5.
 * **`behavior.useUpdateFolder`** — Stage new jars in the server’s `update/` directory for atomic swaps.
+* **`behavior.restartAfterUpdate`** - Automatically restart after updates (delay via `behavior.restartDelaySec`, message via `behavior.restartMessage`).
 * **`behavior.debug`** — Verbose logging toggle, also controllable via `/aup debug`.
 * **`rollback`** — Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
 * **`paths`** — Customize temp/staging/output locations (falls back to sane defaults).
@@ -384,7 +394,7 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 * `autoupdateplugins.update` — Allows `/update`.
 * `autoupdateplugins.manage` — Allows `/aup ...` commands.
 
-> **Heads-up:** Most servers still require a **restart** to load updated jars. The plugin handles download & staging; you decide when to reboot.
+> **Heads-up:** Most servers still require a **restart** to load updated jars. The plugin handles download & staging; you decide when to reboot (auto-restart available via `behavior.restartAfterUpdate`).
 
 ---
 
@@ -449,6 +459,16 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 
   ```
   DirectJar: "https://downloads.example.com/plugins/DirectJar-1.2.3.jar"
+  ```
+* **Local file (patched jar on disk):**
+
+  ```
+  PatchedPlugin: "file:/home/me/builds/PatchedPlugin.jar"
+  ```
+* **Local script (builds jar and prints path):**
+
+  ```
+  PatchedPlugin: "script:./scripts/build-plugin.sh"
   ```
 
 ---
@@ -526,4 +546,8 @@ AutoUpdatePlugins is licensed under the **MIT License**. See **`LICENSE`** for d
 * Comment-preserving config regeneration and richer scheduling controls.
 
 ---
+
+
+
+
 

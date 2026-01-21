@@ -21,6 +21,7 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class BungeeUpdate extends Plugin {
 
@@ -28,6 +29,7 @@ public final class BungeeUpdate extends Plugin {
     private File myFile;
     private ConfigManager cfgMgr;
     private RollbackMonitor rollbackMonitor;
+    private final AtomicBoolean restartScheduled = new AtomicBoolean(false);
 
     @Override
     public void onEnable() {
@@ -46,7 +48,7 @@ public final class BungeeUpdate extends Plugin {
         ensureListFileWithExample(myFile);
         periodUpdatePlugins();
         ProxyServer.getInstance().getPluginManager().registerCommand(this, new UpdateCommand());
-        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig));
+        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runUpdateWithRestart));
     }
 
     private void ensureListFileWithExample(File file) {
@@ -96,7 +98,7 @@ public final class BungeeUpdate extends Plugin {
                     tz,
                     (delay, task) -> getProxy().getScheduler().schedule(this, task, delay, TimeUnit.SECONDS),
                     getLogger(),
-                    () -> getProxy().getScheduler().runAsync(this, () -> pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key")))
+                    () -> getProxy().getScheduler().runAsync(this, this::runUpdateWithRestart)
             );
         }
         if (!scheduled) {
@@ -109,9 +111,56 @@ public final class BungeeUpdate extends Plugin {
         long bootTime = cfgMgr.getInt("updates.bootTime");
         long periodSeconds = 60L * interval;
         getProxy().getScheduler().schedule(this,
-                () -> getProxy().getScheduler().runAsync(this, () -> pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key"))),
+                () -> getProxy().getScheduler().runAsync(this, this::runUpdateWithRestart),
                 bootTime, periodSeconds, TimeUnit.SECONDS);
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
+    }
+
+    private void runUpdateWithRestart() {
+        pluginUpdater.readList(myFile, "waterfall", cfgMgr.getString("updates.key"), anyUpdated -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                return;
+            }
+            if (!anyUpdated) {
+                if (UpdateOptions.debug) {
+                    getLogger().info("[DEBUG] No updates applied; skipping restart.");
+                }
+                return;
+            }
+            scheduleRestart();
+        });
+    }
+
+    private void scheduleRestart() {
+        if (!restartScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        long delaySec = Math.max(0, UpdateOptions.restartDelaySec);
+        String message = formatRestartMessage(UpdateOptions.restartMessage, delaySec);
+        if (message != null && !message.isEmpty()) {
+            getProxy().getScheduler().schedule(this, () ->
+                    ProxyServer.getInstance().broadcast(net.md_5.bungee.api.chat.TextComponent.fromLegacyText(ChatColor.translateAlternateColorCodes('&', message))),
+                    0L, TimeUnit.SECONDS);
+        }
+        getProxy().getScheduler().schedule(this, () -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                restartScheduled.set(false);
+                return;
+            }
+            getLogger().info("[AutoUpdatePlugins] Restarting proxy to apply updates.");
+            ProxyServer.getInstance().stop();
+        }, delaySec, TimeUnit.SECONDS);
+    }
+
+    private String formatRestartMessage(String raw, long delaySec) {
+        if (raw == null) return "";
+        String msg = raw;
+        String delayStr = Long.toString(delaySec);
+        msg = msg.replace("{delay}", delayStr)
+                .replace("{seconds}", delayStr)
+                .replace("%delay%", delayStr)
+                .replace("%seconds%", delayStr);
+        return msg.trim();
     }
 
     private void applyHttpConfigBungee(Configuration config) {
@@ -255,6 +304,10 @@ public final class BungeeUpdate extends Plugin {
             UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
             UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
             UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
+            UpdateOptions.restartAfterUpdate = cfgMgr.getBoolean("behavior.restartAfterUpdate");
+            UpdateOptions.restartDelaySec = Math.max(0, cfgMgr.getInt("behavior.restartDelaySec"));
+            String restartMsg = cfgMgr.getString("behavior.restartMessage");
+            UpdateOptions.restartMessage = (restartMsg != null) ? restartMsg : UpdateOptions.restartMessage;
             UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
             UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
             UpdateOptions.rollbackPath = cfgMgr.getString("paths.rollbackPath");
@@ -322,6 +375,9 @@ public final class BungeeUpdate extends Plugin {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
+        cfgMgr.addDefault("behavior.restartAfterUpdate", false, "Restart the proxy automatically after updates.");
+        cfgMgr.addDefault("behavior.restartDelaySec", 5, "Delay in seconds before restarting after updates.");
+        cfgMgr.addDefault("behavior.restartMessage", "Server restarting to apply updates.", "Broadcast message before restarting (supports {delay}).");
 
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
@@ -364,7 +420,7 @@ public final class BungeeUpdate extends Plugin {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(myFile, "bungee", cfgMgr.getString("updates.key"));
+            runUpdateWithRestart();
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
         }
     }

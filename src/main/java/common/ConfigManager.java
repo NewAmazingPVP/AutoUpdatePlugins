@@ -23,6 +23,7 @@ public class ConfigManager {
     private final LoadSettings loadSettings;
     private final DumpSettings dumpSettings;
     private String originalContent;
+    private String lineSeparator = System.lineSeparator();
     private final StandardRepresenter representer;
     private final Map<String, String> commentMap;
     private final Set<String> processedPaths;
@@ -78,7 +79,9 @@ public class ConfigManager {
     private void loadConfig() {
         if (configFile.exists()) {
             try {
-                originalContent = new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);
+                String rawContent = new String(Files.readAllBytes(configFile.toPath()), StandardCharsets.UTF_8);
+                lineSeparator = detectLineSeparator(rawContent);
+                originalContent = normalizeToLf(rawContent);
                 Load loader = new Load(loadSettings);
                 configMap = toLinkedMap((Map<String, Object>) loader.loadFromString(originalContent));
                 if (configMap == null) {
@@ -93,6 +96,35 @@ public class ConfigManager {
 
             configMap = new LinkedHashMap<>();
         }
+    }
+
+    private String detectLineSeparator(String content) {
+        if (content == null || content.isEmpty()) {
+            return System.lineSeparator();
+        }
+        if (content.contains("\r\n")) {
+            return "\r\n";
+        }
+        if (content.contains("\n")) {
+            return "\n";
+        }
+        return System.lineSeparator();
+    }
+
+    private String normalizeToLf(String content) {
+        if (content == null || content.isEmpty()) {
+            return content;
+        }
+        String normalized = content.replace("\r\n", "\n");
+        return normalized.replace("\r", "\n");
+    }
+
+    private String applyLineSeparator(String content) {
+        if (content == null || content.isEmpty()) {
+            return "";
+        }
+        String normalized = normalizeToLf(content);
+        return normalized.replace("\n", lineSeparator);
     }
 
     private void extractExistingComments() {
@@ -183,17 +215,18 @@ public class ConfigManager {
     public void saveConfig() {
         try {
             Dump dumper = new Dump(dumpSettings, representer);
-            String newContent = dumper.dumpToString(configMap);
+            String newContent = normalizeToLf(dumper.dumpToString(configMap));
 
-            String[] lines = newContent.split("\n");
+            String[] lines = newContent.split("\n", -1);
             StringBuilder result = new StringBuilder();
             Stack<String> pathStack = new Stack<>();
             int currentIndent = 0;
 
             if (leadingComments != null && !leadingComments.isEmpty()) {
-                result.append(leadingComments);
-                if (!leadingComments.endsWith("\n")) {
-                    result.append("\n");
+                String normalizedLeading = normalizeToLf(leadingComments);
+                result.append(applyLineSeparator(normalizedLeading));
+                if (!normalizedLeading.endsWith("\n")) {
+                    result.append(lineSeparator);
                 }
             }
 
@@ -224,25 +257,29 @@ public class ConfigManager {
                     String comment = commentMap.get(fullPath);
 
                     if (comment != null && !comment.isEmpty()) {
-                        result.append(comment).append("\n");
+                        result.append(applyLineSeparator(comment)).append(lineSeparator);
                     }
                 }
 
                 result.append(line);
                 if (i < lines.length - 1) {
-                    result.append("\n");
+                    result.append(lineSeparator);
                 }
             }
 
             if (trailingComments != null && !trailingComments.isEmpty()) {
-                result.append("\n").append(trailingComments);
-                if (!trailingComments.endsWith("\n")) {
-                    result.append("\n");
+                String normalizedTrailing = normalizeToLf(trailingComments);
+                if (result.length() > 0 && !result.toString().endsWith(lineSeparator)) {
+                    result.append(lineSeparator);
+                }
+                result.append(applyLineSeparator(normalizedTrailing));
+                if (!normalizedTrailing.endsWith("\n")) {
+                    result.append(lineSeparator);
                 }
             }
 
             Files.write(configFile.toPath(), result.toString().getBytes(StandardCharsets.UTF_8));
-            originalContent = result.toString();
+            originalContent = normalizeToLf(result.toString());
         } catch (IOException e) {
             System.err.println("Could not save config: " + e.getMessage());
         }

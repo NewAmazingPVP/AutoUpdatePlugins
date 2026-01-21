@@ -14,6 +14,7 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import common.*;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -31,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 @Plugin(id = "autoupdateplugins", name = "AutoUpdatePlugins", version = "12.1.3", url = "https://www.spigotmc.org/resources/autoupdateplugins.109683/", authors = "NewAmazingPVP")
@@ -44,6 +46,7 @@ public final class VelocityUpdate {
     private ConfigManager cfgMgr;
     private final Logger logger = Logger.getLogger("AutoUpdatePlugins");
     private RollbackMonitor rollbackMonitor;
+    private final AtomicBoolean restartScheduled = new AtomicBoolean(false);
 
     @Inject
     public VelocityUpdate(ProxyServer proxy, @DataDirectory Path dataDirectory, Metrics.Factory metricsFactory) {
@@ -93,7 +96,7 @@ public final class VelocityUpdate {
         commandManager.register(updateMeta, new UpdateCommand());
 
         CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
-        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig));
+        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runUpdateWithRestart));
     }
 
     private void configureRollback() {
@@ -163,7 +166,7 @@ public final class VelocityUpdate {
                     tz,
                     (delay, task) -> proxy.getScheduler().buildTask(this, task).delay(Duration.ofSeconds(delay)).schedule(),
                     getLogger(),
-                    () -> pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"))
+                    this::runUpdateWithRestart
             );
         }
         if (!scheduled) {
@@ -175,8 +178,57 @@ public final class VelocityUpdate {
         long interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
 
-        proxy.getScheduler().buildTask(this, () -> pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"))).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
+        proxy.getScheduler().buildTask(this, this::runUpdateWithRestart).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
+    }
+
+    private void runUpdateWithRestart() {
+        pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"), anyUpdated -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                return;
+            }
+            if (!anyUpdated) {
+                if (UpdateOptions.debug) {
+                    logger.info("[DEBUG] No updates applied; skipping Velocity restart.");
+                }
+                return;
+            }
+            scheduleVelocityRestart();
+        });
+    }
+
+    private void scheduleVelocityRestart() {
+        if (!restartScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        int delay = Math.max(0, UpdateOptions.restartDelaySec);
+        String message = formatRestartMessage(UpdateOptions.restartMessage, delay);
+        if (message != null && !message.isEmpty()) {
+            Component component = LegacyComponentSerializer.legacyAmpersand().deserialize(message);
+            proxy.getScheduler().buildTask(this, () ->
+                    proxy.getAllPlayers().forEach(player -> player.sendMessage(component)))
+                .delay(Duration.ZERO)
+                .schedule();
+        }
+        proxy.getScheduler().buildTask(this, () -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                restartScheduled.set(false);
+                return;
+            }
+            logger.info("[AutoUpdatePlugins] Restarting Velocity to apply updates.");
+            proxy.shutdown();
+        }).delay(Duration.ofSeconds(delay)).schedule();
+    }
+
+    private String formatRestartMessage(String raw, long delaySec) {
+        if (raw == null) return "";
+        String msg = raw;
+        String delayStr = Long.toString(delaySec);
+        msg = msg.replace("{delay}", delayStr)
+                .replace("{seconds}", delayStr)
+                .replace("%delay%", delayStr)
+                .replace("%seconds%", delayStr);
+        return msg.trim();
     }
 
     private void applyHttpConfigFromCfg() {
@@ -254,6 +306,10 @@ public final class VelocityUpdate {
             UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
             UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
             UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
+            UpdateOptions.restartAfterUpdate = cfgMgr.getBoolean("behavior.restartAfterUpdate");
+            UpdateOptions.restartDelaySec = Math.max(0, cfgMgr.getInt("behavior.restartDelaySec"));
+            String restartMsg = cfgMgr.getString("behavior.restartMessage");
+            UpdateOptions.restartMessage = (restartMsg != null) ? restartMsg : UpdateOptions.restartMessage;
             UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
             UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
             UpdateOptions.rollbackPath = cfgMgr.getString("paths.rollbackPath");
@@ -322,6 +378,9 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
+        cfgMgr.addDefault("behavior.restartAfterUpdate", false, "Restart the proxy automatically after updates.");
+        cfgMgr.addDefault("behavior.restartDelaySec", 5, "Delay in seconds before restarting after updates.");
+        cfgMgr.addDefault("behavior.restartMessage", "Server restarting to apply updates.", "Broadcast message before restarting (supports {delay}).");
 
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
@@ -369,7 +428,7 @@ public final class VelocityUpdate {
                 source.sendMessage(Component.text("An update is already in progress. Please wait.").color(NamedTextColor.RED));
                 return;
             }
-            pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"));
+            runUpdateWithRestart();
             source.sendMessage(Component.text("Plugins are successfully updating!").color(NamedTextColor.AQUA));
         }
     }

@@ -40,15 +40,24 @@ import java.util.zip.ZipInputStream;
 
 public class PluginDownloader {
 
+    public interface InstallListener {
+        void onInstall(String pluginName, Path targetPath);
+    }
+
     private final Logger logger;
     private static Map<String, String> extraHeaders = new HashMap<>();
     private static String overrideUserAgent = null;
     private static volatile CloseableHttpClient pooledClient = null;
     private static volatile PoolingHttpClientConnectionManager connMgr = null;
     private static Boolean java11HttpAvailable = null;
+    private volatile InstallListener installListener;
 
     public PluginDownloader(Logger logger) {
         this.logger = logger;
+    }
+
+    public void setInstallListener(InstallListener listener) {
+        this.installListener = listener;
     }
 
     private void backoffDelay(int attempt, int code, String link) {
@@ -78,6 +87,17 @@ public class PluginDownloader {
         if (overrideUserAgent != null && !overrideUserAgent.isEmpty()) return overrideUserAgent;
         if (!UpdateOptions.userAgents.isEmpty()) return UpdateOptions.userAgents.get(0);
         return "AutoUpdatePlugins";
+    }
+
+    private void notifyInstalled(String pluginName, Path targetPath) {
+        InstallListener listener = installListener;
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.onInstall(pluginName, targetPath);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static void ensureClient() {
@@ -186,6 +206,33 @@ public class PluginDownloader {
             return false;
         } finally {
             if (hostSem != null) hostSem.release();
+        }
+    }
+
+    public boolean installLocalFile(Path source, String fileName, String customPath) throws IOException {
+        if (source == null) {
+            throw new IOException("Local file path is null");
+        }
+        if (!Files.isRegularFile(source)) {
+            logger.info("Local file not found: " + source);
+            return false;
+        }
+        String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
+        String rawTempPath = tempBase + fileName + ".download.tmp";
+        String outputFilePath = resolveOutputPath(fileName, customPath);
+        String outputTempPath = outputFilePath + ".temp";
+
+        File rawTmp = new File(rawTempPath);
+        File outTmp = new File(outputTempPath);
+        cleanupQuietly(rawTmp);
+        cleanupQuietly(outTmp);
+
+        Files.copy(source, rawTmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        try {
+            return postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName);
+        } finally {
+            cleanupQuietly(new File(rawTempPath));
+            cleanupQuietly(new File(outputTempPath));
         }
     }
 
@@ -298,6 +345,7 @@ public class PluginDownloader {
             } catch (Exception ignored) {
             }
         }
+        notifyInstalled(pluginName, target.toPath());
         cleanupQuietly(rawTmp);
         return true;
     }
@@ -488,6 +536,7 @@ public class PluginDownloader {
                     return true;
                 }
                 moveReplace(outTmp, target);
+                notifyInstalled(fileName, target.toPath());
                 cleanupQuietly(rawTmp);
                 return true;
             } catch (IOException e) {
@@ -1057,6 +1106,7 @@ public class PluginDownloader {
         File out = new File(outputFilePath);
         if (UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
         copyFile(jar, out);
+        notifyInstalled(fileName, out.toPath());
         return true;
     }
 

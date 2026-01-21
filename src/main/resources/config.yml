@@ -64,6 +64,12 @@ behavior:
     branchNewerMonths: 6
   # Verbose debug logging. Toggle with /aup debug on|off
   debug: false
+  # Restart the server/proxy automatically after updates.
+  restartAfterUpdate: false
+  # Delay in seconds before restarting after updates.
+  restartDelaySec: 5
+  # Broadcast message before restarting (supports {delay}).
+  restartMessage: "Server restarting to apply updates."
 
 
 
@@ -118,7 +124,8 @@ rollback:
 #   EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 #
 # Supported sources: GitHub (Releases & Actions), Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar,
-# BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, plus generic pages with direct .jar links.
+# BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, local file paths, local scripts,
+# plus generic pages with direct .jar links.
 #
 # Tips:
 # - Select assets: append [N] to pick the Nth asset or use ?get=<regex> to match by filename.

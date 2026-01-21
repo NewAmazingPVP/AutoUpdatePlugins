@@ -20,13 +20,15 @@ public class AupCommand extends Command implements TabExecutor {
     private final File listFile;
     private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
+    private final Runnable updateAllAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction) {
         super("aup", "autoupdateplugins.manage", "autoupdateplugins");
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
         this.reloadAction = reloadAction;
+        this.updateAllAction = updateAllAction;
     }
 
     @Override
@@ -153,7 +155,11 @@ public class AupCommand extends Command implements TabExecutor {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(listFile, "waterfall", cfgMgr.getString("updates.key"));
+            if (updateAllAction != null) {
+                updateAllAction.run();
+            } else {
+                pluginUpdater.readList(listFile, "waterfall", cfgMgr.getString("updates.key"));
+            }
             sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
             return;
         }

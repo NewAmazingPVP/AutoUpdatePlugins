@@ -20,12 +20,14 @@ public class AupCommand implements SimpleCommand {
     private final File listFile;
     private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
+    private final Runnable updateAllAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
         this.reloadAction = reloadAction;
+        this.updateAllAction = updateAllAction;
     }
 
     @Override
@@ -155,7 +157,11 @@ public class AupCommand implements SimpleCommand {
                 source.sendMessage(Component.text("An update is already in progress. Please wait.").color(NamedTextColor.RED));
                 return;
             }
-            pluginUpdater.readList(listFile, "velocity", cfgMgr.getString("updates.key"));
+            if (updateAllAction != null) {
+                updateAllAction.run();
+            } else {
+                pluginUpdater.readList(listFile, "velocity", cfgMgr.getString("updates.key"));
+            }
             source.sendMessage(Component.text("Updating all plugins...").color(NamedTextColor.GREEN));
             return;
         }

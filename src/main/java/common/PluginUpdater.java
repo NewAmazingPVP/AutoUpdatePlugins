@@ -52,11 +52,16 @@ public class PluginUpdater {
     private final Logger logger;
     private final AtomicBoolean updating = new AtomicBoolean(false);
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
+    private final AtomicBoolean updateApplied = new AtomicBoolean(false);
     private volatile ExecutorService currentExecutor;
 
     private static final List<PendingMove> DEFERRED_MOVES = Collections.synchronizedList(new ArrayList<>());
     private static final AtomicBoolean DEFERRED_HOOK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicReference<Logger> DEFERRED_LOGGER = new AtomicReference<>();
+
+    public interface UpdateCompletionListener {
+        void onComplete(boolean anyUpdateApplied);
+    }
 
     public PluginUpdater(Logger logger) {
         this.logger = logger;
@@ -68,10 +73,19 @@ public class PluginUpdater {
     }
 
     public void readList(File myFile, String platform, String key) {
+        readList(myFile, platform, key, null);
+    }
+
+    public void readList(File myFile, String platform, String key, UpdateCompletionListener listener) {
         if (!updating.compareAndSet(false, true)) {
             logger.info("Update already running. Skipping new request.");
+            if (listener != null) {
+                listener.onComplete(false);
+            }
             return;
         }
+        updateApplied.set(false);
+        pluginDownloader.setInstallListener((name, path) -> updateApplied.set(true));
         CompletableFuture.runAsync(() -> {
             cancelRequested.set(false);
             if (myFile.length() == 0) {
@@ -132,9 +146,13 @@ public class PluginUpdater {
             }
 
         }).whenComplete((v, t) -> {
+            pluginDownloader.setInstallListener(null);
             updating.set(false);
             cancelRequested.set(false);
             currentExecutor = null;
+            if (listener != null) {
+                listener.onComplete(updateApplied.get());
+            }
         });
     }
 
@@ -253,6 +271,371 @@ public class PluginUpdater {
         return path;
     }
 
+    private void markUpdateApplied() {
+        updateApplied.set(true);
+    }
+
+    private boolean isScriptSource(String value) {
+        if (value == null) return false;
+        String lower = value.trim().toLowerCase(Locale.ROOT);
+        return lower.startsWith("script:") || lower.startsWith("exec:");
+    }
+
+    private String stripScriptPrefix(String value) {
+        if (value == null) return "";
+        String trimmed = value.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("script:")) return trimmed.substring("script:".length()).trim();
+        if (lower.startsWith("exec:")) return trimmed.substring("exec:".length()).trim();
+        return trimmed;
+    }
+
+    private boolean handleScriptSource(String value, Map.Entry<String, String> entry, String customPath) {
+        String command = stripScriptPrefix(value);
+        if (command.isEmpty()) {
+            logger.info("Script source is empty for " + entry.getKey());
+            return false;
+        }
+        return runLocalScript(command, entry.getKey(), customPath);
+    }
+
+    private boolean runLocalScript(String command, String pluginName, String customPath) {
+        List<String> tokens = splitCommandLine(command);
+        if (tokens.isEmpty()) {
+            logger.info("Script command is empty for " + pluginName);
+            return false;
+        }
+        Path scriptPath = resolvePathString(tokens.get(0));
+        if (scriptPath != null) {
+            if (!Files.exists(scriptPath)) {
+                scriptPath = null;
+            } else {
+                scriptPath = scriptPath.toAbsolutePath().normalize();
+            }
+        }
+        Path workingDir = resolveWorkingDir(scriptPath);
+        List<String> cmd = buildScriptCommand(tokens, scriptPath);
+        if (cmd.isEmpty()) {
+            logger.info("Script command could not be resolved for " + pluginName);
+            return false;
+        }
+        if (UpdateOptions.debug) {
+            logger.info("[DEBUG] Running script for " + pluginName + ": " + String.join(" ", cmd));
+        }
+        Process process;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            if (workingDir != null) {
+                pb.directory(workingDir.toFile());
+            }
+            pb.redirectErrorStream(true);
+            process = pb.start();
+        } catch (IOException e) {
+            logger.info("Failed to start script for " + pluginName + ": " + e.getMessage());
+            return false;
+        }
+
+        List<String> outputLines = Collections.synchronizedList(new ArrayList<>());
+        Thread reader = new Thread(() -> {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    outputLines.add(line);
+                    if (UpdateOptions.debug && line.trim().length() > 0) {
+                        logger.info("[DEBUG] [SCRIPT] " + line);
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+        }, "AUP-ScriptOutput");
+        reader.setDaemon(true);
+        reader.start();
+
+        try {
+            int timeoutSec = Math.max(0, UpdateOptions.perDownloadTimeoutSec);
+            boolean finished;
+            if (timeoutSec > 0) {
+                finished = process.waitFor(timeoutSec, TimeUnit.SECONDS);
+            } else {
+                process.waitFor();
+                finished = true;
+            }
+            if (!finished) {
+                process.destroyForcibly();
+                logger.info("Script timed out for " + pluginName + " after " + timeoutSec + "s");
+                return false;
+            }
+            int exit = process.exitValue();
+            try {
+                reader.join(1000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            if (exit != 0) {
+                logger.info("Script exited with code " + exit + " for " + pluginName);
+                if (UpdateOptions.debug && !outputLines.isEmpty()) {
+                    logger.info("[DEBUG] Script output for " + pluginName + ": " + outputLines);
+                }
+                return false;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+
+        String outputPath = pickScriptOutput(outputLines);
+        if (outputPath == null) {
+            logger.info("Script did not output a jar path for " + pluginName);
+            return false;
+        }
+
+        Path jarPath = resolveScriptOutputPath(outputPath, workingDir);
+        if (jarPath == null) {
+            logger.info("Script output path is invalid for " + pluginName + ": " + outputPath);
+            return false;
+        }
+        if (!Files.isRegularFile(jarPath)) {
+            logger.info("Script output file not found for " + pluginName + ": " + jarPath);
+            return false;
+        }
+
+        try {
+            return pluginDownloader.installLocalFile(jarPath, pluginName, customPath);
+        } catch (IOException e) {
+            logger.info("Failed to install script output for " + pluginName + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    private List<String> buildScriptCommand(List<String> tokens, Path scriptPath) {
+        if (tokens == null || tokens.isEmpty()) return Collections.emptyList();
+        List<String> cmd = new ArrayList<>();
+        List<String> args = tokens.size() > 1 ? tokens.subList(1, tokens.size()) : Collections.emptyList();
+        boolean win = isWindows();
+        if (scriptPath != null) {
+            String scriptName = scriptPath.getFileName() != null ? scriptPath.getFileName().toString().toLowerCase(Locale.ROOT) : "";
+            if (win && (scriptName.endsWith(".bat") || scriptName.endsWith(".cmd"))) {
+                cmd.add("cmd.exe");
+                cmd.add("/C");
+                cmd.add(scriptPath.toString());
+                cmd.addAll(args);
+                return cmd;
+            }
+            if (!win && shouldUseSh(scriptPath)) {
+                cmd.add("sh");
+                cmd.add(scriptPath.toString());
+                cmd.addAll(args);
+                return cmd;
+            }
+            cmd.add(scriptPath.toString());
+            cmd.addAll(args);
+            return cmd;
+        }
+        cmd.addAll(tokens);
+        return cmd;
+    }
+
+    private boolean shouldUseSh(Path scriptPath) {
+        if (scriptPath == null) return false;
+        String name = scriptPath.getFileName() != null ? scriptPath.getFileName().toString().toLowerCase(Locale.ROOT) : "";
+        if (name.endsWith(".sh")) return true;
+        try {
+            return !Files.isExecutable(scriptPath);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private Path resolveWorkingDir(Path scriptPath) {
+        if (scriptPath != null) {
+            Path parent = scriptPath.toAbsolutePath().getParent();
+            if (parent != null) {
+                return parent;
+            }
+        }
+        try {
+            return Paths.get(".").toAbsolutePath().normalize();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String pickScriptOutput(List<String> lines) {
+        if (lines == null || lines.isEmpty()) return null;
+        String fallback = null;
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            String line = lines.get(i);
+            if (line != null) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty()) {
+                    String unquoted = stripQuotes(trimmed);
+                    String lower = unquoted.toLowerCase(Locale.ROOT);
+                    if (lower.endsWith(".jar") || lower.endsWith(".zip")) {
+                        return unquoted;
+                    }
+                    if (fallback == null) {
+                        fallback = unquoted;
+                    }
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private Path resolveScriptOutputPath(String output, Path workingDir) {
+        Path path = resolvePathString(output);
+        if (path == null) return null;
+        if (!path.isAbsolute() && workingDir != null) {
+            path = workingDir.resolve(path).normalize();
+        }
+        return path;
+    }
+
+    private Path resolveLocalPath(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) return null;
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("file:")) {
+            return parseFileUri(trimmed);
+        }
+        if (lower.startsWith("local:")) {
+            return resolvePathString(trimmed.substring("local:".length()).trim());
+        }
+        if (lower.startsWith("path:")) {
+            return resolvePathString(trimmed.substring("path:".length()).trim());
+        }
+        if (looksLikeUrl(trimmed)) {
+            return null;
+        }
+        return resolvePathString(trimmed);
+    }
+
+    private Path resolvePathString(String raw) {
+        if (raw == null) return null;
+        String trimmed = stripQuotes(raw.trim());
+        if (trimmed.isEmpty()) return null;
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("file:")) {
+            return parseFileUri(trimmed);
+        }
+        if (lower.startsWith("local:")) {
+            trimmed = trimmed.substring("local:".length()).trim();
+        } else if (lower.startsWith("path:")) {
+            trimmed = trimmed.substring("path:".length()).trim();
+        }
+        trimmed = expandUserHome(trimmed);
+        try {
+            return Paths.get(trimmed).normalize();
+        } catch (InvalidPathException ex) {
+            return null;
+        }
+    }
+
+    private Path parseFileUri(String raw) {
+        if (raw == null) return null;
+        try {
+            java.net.URI uri = java.net.URI.create(raw);
+            if ("file".equalsIgnoreCase(uri.getScheme())) {
+                return Paths.get(uri).normalize();
+            }
+        } catch (Exception ignored) {
+        }
+        String path = raw.substring("file:".length());
+        if (path.startsWith("//")) {
+            path = path.substring(2);
+        }
+        path = expandUserHome(path);
+        try {
+            return Paths.get(path).normalize();
+        } catch (InvalidPathException ex) {
+            return null;
+        }
+    }
+
+    private String stripQuotes(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2) {
+            char first = trimmed.charAt(0);
+            char last = trimmed.charAt(trimmed.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
+
+    private boolean handleLocalFile(Path localPath, Map.Entry<String, String> entry, String customPath) {
+        if (localPath == null) return false;
+        if (!Files.isRegularFile(localPath)) {
+            logger.info("Local file not found for " + entry.getKey() + ": " + localPath);
+            return false;
+        }
+        try {
+            return pluginDownloader.installLocalFile(localPath, entry.getKey(), customPath);
+        } catch (IOException e) {
+            logger.info("Failed to install local file for " + entry.getKey() + ": " + e.getMessage());
+            return false;
+        }
+    }
+
+    private List<String> splitCommandLine(String command) {
+        List<String> args = new ArrayList<>();
+        if (command == null) return args;
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        char quote = 0;
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+            if (inQuotes) {
+                if (c == quote) {
+                    inQuotes = false;
+                    continue;
+                }
+                if (c == '\\') {
+                    if (i + 1 < command.length()) {
+                        char next = command.charAt(i + 1);
+                        if (next == quote || next == '\\') {
+                            current.append(next);
+                            i++;
+                            continue;
+                        }
+                    }
+                    current.append(c);
+                    continue;
+                }
+                current.append(c);
+            } else {
+                if (c == '"' || c == '\'') {
+                    inQuotes = true;
+                    quote = c;
+                    continue;
+                }
+                if (Character.isWhitespace(c)) {
+                    if (current.length() > 0) {
+                        args.add(current.toString());
+                        current.setLength(0);
+                    }
+                    continue;
+                }
+                current.append(c);
+            }
+        }
+        if (current.length() > 0) {
+            args.add(current.toString());
+        }
+        return args;
+    }
+
+    private boolean looksLikeUrl(String value) {
+        if (value == null) return false;
+        int idx = value.indexOf("://");
+        if (idx <= 0) return false;
+        String scheme = value.substring(0, idx).toLowerCase(Locale.ROOT);
+        return !scheme.equals("file") && !scheme.equals("local") && !scheme.equals("path") && !scheme.equals("script") && !scheme.equals("exec");
+    }
+
 
     private ExecutorService createExecutor(int parallelism) {
         try {
@@ -280,7 +663,21 @@ public class PluginUpdater {
                 String tail = rawValue.substring(pipe + 1).trim();
                 if (!tail.isEmpty()) customPath = tail;
             }
-            String value = linkPart.replace("dev.bukkit.org/projects", "www.curseforge.com/minecraft/bukkit-plugins");
+            String value = linkPart != null ? linkPart.trim() : "";
+            if (value.isEmpty()) {
+                return false;
+            }
+
+            if (isScriptSource(value)) {
+                return handleScriptSource(value, entry, customPath);
+            }
+
+            Path localPath = resolveLocalPath(value);
+            if (localPath != null) {
+                return handleLocalFile(localPath, entry, customPath);
+            }
+
+            value = value.replace("dev.bukkit.org/projects", "www.curseforge.com/minecraft/bukkit-plugins");
 
             if (value.contains("blob.build")) {
                 return handleBlobBuild(value, key, entry);
@@ -1847,6 +2244,7 @@ public class PluginUpdater {
             } catch (Exception ignored) {
             }
             if (GitHubBuild.handleGitHubBuild(logger, url, out, key)) {
+                markUpdateApplied();
                 return true;
             }
         } catch (Throwable ignored) {

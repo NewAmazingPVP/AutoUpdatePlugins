@@ -32,6 +32,9 @@ public class UpdateOptions {
     public static int rollbackMaxCopies = 3;
     public static String rollbackPath = null;
     public static final List<String> rollbackFilters = new ArrayList<>();
+    public static boolean restartAfterUpdate = false;
+    public static int restartDelaySec = 5;
+    public static String restartMessage = "Server restarting to apply updates.";
 
 
     private UpdateOptions() {

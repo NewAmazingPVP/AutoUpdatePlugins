@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SpigotUpdate extends JavaPlugin {
 
@@ -32,6 +33,7 @@ public final class SpigotUpdate extends JavaPlugin {
     private FileConfiguration config;
     private ConfigManager cfgMgr;
     private RollbackMonitor rollbackMonitor;
+    private final AtomicBoolean restartScheduled = new AtomicBoolean(false);
 
     @Override
     public void onEnable() {
@@ -47,7 +49,7 @@ public final class SpigotUpdate extends JavaPlugin {
         periodUpdatePlugins();
         getCommand("update").setExecutor(new UpdateCommand());
         if (getCommand("aup") != null) {
-            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr, this::reloadPluginConfig);
+            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr, this::reloadPluginConfig, this::runUpdateWithRestart);
             getCommand("aup").setExecutor(aup);
             getCommand("aup").setTabCompleter(aup);
         }
@@ -122,7 +124,7 @@ public final class SpigotUpdate extends JavaPlugin {
     public void periodUpdatePlugins() {
         String cronExpression = cfgMgr.getString("updates.schedule.cron");
         SchedulerAdapter sched = new SchedulerAdapter(this);
-        Runnable job = () -> pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key"));
+        Runnable job = this::runUpdateWithRestart;
 
         boolean scheduled = false;
         if (cronExpression != null && !cronExpression.isEmpty()) {
@@ -138,8 +140,55 @@ public final class SpigotUpdate extends JavaPlugin {
         int interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
         SchedulerAdapter sched = new SchedulerAdapter(this);
-        sched.runRepeatingAsync(bootTime, 60L * interval, () -> pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key")));
+        sched.runRepeatingAsync(bootTime, 60L * interval, this::runUpdateWithRestart);
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
+    }
+
+    private void runUpdateWithRestart() {
+        pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key"), anyUpdated -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                return;
+            }
+            if (!anyUpdated) {
+                if (UpdateOptions.debug) {
+                    getLogger().info("[DEBUG] No updates applied; skipping restart.");
+                }
+                return;
+            }
+            scheduleRestart();
+        });
+    }
+
+    private void scheduleRestart() {
+        if (!restartScheduled.compareAndSet(false, true)) {
+            return;
+        }
+        long delaySec = Math.max(0, UpdateOptions.restartDelaySec);
+        long delayTicks = delaySec * 20L;
+        String message = formatRestartMessage(UpdateOptions.restartMessage, delaySec);
+        if (message != null && !message.isEmpty()) {
+            Bukkit.getScheduler().runTask(this, () ->
+                    Bukkit.broadcastMessage(ChatColor.translateAlternateColorCodes('&', message)));
+        }
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                restartScheduled.set(false);
+                return;
+            }
+            getLogger().info("[AutoUpdatePlugins] Restarting server to apply updates.");
+            Bukkit.shutdown();
+        }, delayTicks);
+    }
+
+    private String formatRestartMessage(String raw, long delaySec) {
+        if (raw == null) return "";
+        String msg = raw;
+        String delayStr = Long.toString(delaySec);
+        msg = msg.replace("{delay}", delayStr)
+                .replace("{seconds}", delayStr)
+                .replace("%delay%", delayStr)
+                .replace("%seconds%", delayStr);
+        return msg.trim();
     }
 
     private void applyHttpConfig() {
@@ -222,6 +271,10 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.allowPreReleaseDefault = config.getBoolean("behavior.allowPreRelease");
             UpdateOptions.useUpdateFolder = config.getBoolean("behavior.useUpdateFolder");
             UpdateOptions.debug = config.getBoolean("behavior.debug");
+            UpdateOptions.restartAfterUpdate = config.getBoolean("behavior.restartAfterUpdate");
+            UpdateOptions.restartDelaySec = Math.max(0, config.getInt("behavior.restartDelaySec"));
+            String restartMsg = config.getString("behavior.restartMessage");
+            UpdateOptions.restartMessage = (restartMsg != null) ? restartMsg : UpdateOptions.restartMessage;
             UpdateOptions.tempPath = config.getString("paths.tempPath");
             UpdateOptions.updatePath = config.getString("paths.updatePath");
             UpdateOptions.rollbackPath = config.getString("paths.rollbackPath");
@@ -274,7 +327,7 @@ public final class SpigotUpdate extends JavaPlugin {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return true;
             }
-            pluginUpdater.readList(myFile, serverPlatform(), cfgMgr.getString("updates.key"));
+            runUpdateWithRestart();
             sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
             return true;
         }
@@ -328,6 +381,9 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
+        cfgMgr.addDefault("behavior.restartAfterUpdate", false, "Restart the server automatically after updates.");
+        cfgMgr.addDefault("behavior.restartDelaySec", 5, "Delay in seconds before restarting after updates.");
+        cfgMgr.addDefault("behavior.restartMessage", "Server restarting to apply updates.", "Broadcast message before restarting (supports {delay}).");
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");
         cfgMgr.addDefault("paths.updatePath", "", "Custom update folder path (optional)");

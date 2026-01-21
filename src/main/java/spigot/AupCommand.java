@@ -26,14 +26,16 @@ public class AupCommand implements CommandExecutor, TabCompleter {
     private final Supplier<String> keySupplier;
     private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
+    private final Runnable updateAllAction;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier, ConfigManager cfgMgr, Runnable reloadAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, FileConfiguration config, Supplier<String> keySupplier, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.config = config;
         this.keySupplier = keySupplier;
         this.cfgMgr = cfgMgr;
         this.reloadAction = reloadAction;
+        this.updateAllAction = updateAllAction;
     }
 
     @Override
@@ -165,7 +167,11 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
                 return;
             }
-            pluginUpdater.readList(listFile, serverPlatform(), keySupplier.get());
+            if (updateAllAction != null) {
+                updateAllAction.run();
+            } else {
+                pluginUpdater.readList(listFile, serverPlatform(), keySupplier.get());
+            }
             sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
             return;
         }
