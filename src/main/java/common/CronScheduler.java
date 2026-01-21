@@ -60,8 +60,12 @@ public class CronScheduler {
         ZonedDateTime now = ZonedDateTime.now(zone);
         Optional<ZonedDateTime> next = exec.nextExecution(now);
         if (next.isPresent()) {
-            long seconds = Duration.between(now, next.get()).getSeconds();
-            return Math.max(0, seconds);
+            long millis = Duration.between(now, next.get()).toMillis();
+            if (millis <= 0) {
+                return 0;
+            }
+            long seconds = (millis + 999) / 1000;
+            return Math.max(1, seconds);
         } else {
             logger.warning("Could not determine next cron execution for: " + expr);
             return -1;
