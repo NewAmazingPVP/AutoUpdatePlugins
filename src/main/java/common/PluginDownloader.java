@@ -21,7 +21,6 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.InvalidPathException;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
@@ -290,7 +289,7 @@ public class PluginDownloader {
             return false;
         }
         if (!downloadWithVerification(rawTmp, connection)) {
-            logger.warning("Download failed (attempt " + attempt + ") — retrying lenient mode (old-plugin behavior)");
+            logger.warning("Download failed (attempt " + attempt + ") - retrying lenient mode (old-plugin behavior)");
             try {
                 connection = openConnection(link, githubToken, requiresAuth);
                 return downloadLenient(rawTmp, connection);

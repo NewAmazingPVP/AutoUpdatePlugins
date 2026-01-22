@@ -139,7 +139,7 @@ public final class BungeeUpdate extends Plugin {
         String message = formatRestartMessage(UpdateOptions.restartMessage, delaySec);
         if (message != null && !message.isEmpty()) {
             getProxy().getScheduler().schedule(this, () ->
-                    ProxyServer.getInstance().broadcast(net.md_5.bungee.api.chat.TextComponent.fromLegacyText(ChatColor.translateAlternateColorCodes('&', message))),
+                            ProxyServer.getInstance().broadcast(net.md_5.bungee.api.chat.TextComponent.fromLegacyText(ChatColor.translateAlternateColorCodes('&', message))),
                     0L, TimeUnit.SECONDS);
         }
         getProxy().getScheduler().schedule(this, () -> {

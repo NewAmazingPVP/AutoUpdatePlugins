@@ -2,11 +2,10 @@
 
 <div align="center">
 
-# **AutoUpdatePlugins v12.1.2**
+# **AutoUpdatePlugins v12.2.0**
 
-*Keep your server’s plugins up-to-date — automatically, safely, and across platforms.*
+*Keep your server’s plugins up-to-date - automatically, safely, and across platforms.*
 
-[![SpigotMC](https://img.shields.io/badge/SpigotMC-Resource-orange)](https://www.spigotmc.org/resources/autoupdateplugins.109683/)
 ![Platforms](https://img.shields.io/badge/Platforms-Spigot%20%7C%20Paper%20%7C%20Folia%20%7C%20Velocity%20%7C%20BungeeCord-5A67D8)
 ![MC](https://img.shields.io/badge/Minecraft-1.8%E2%86%92Latest-2EA043)
 ![Java](https://img.shields.io/badge/Java-8%2B%20\(11%2B%20HTTP%2F2,%2021%2B%20Virtual%20Threads\)-1F6FEB)
@@ -15,7 +14,8 @@
 </div>
 
 > **TL;DR**
-> Drop in the jar ➜ list the plugins you want ➜ it finds, downloads, validates, and stages updates from a ton of sources — on a schedule, in parallel, without blocking your main thread.
+> Drop in the jar ➜ list the plugins you want ➜ it finds, downloads, validates, and stages updates from a ton of
+> sources - on a schedule, in parallel, without blocking your main thread.
 
 ---
 
@@ -45,10 +45,14 @@
 
 ## Highlights
 
-* **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit, Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
+* **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit,
+  Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
 * **Local sources.** Point at local jar files or run scripts that output a jar path for custom/patched builds.
-* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset — works for both GitHub and Jenkins artifacts), `?artifact=2` for GitHub Actions bundles, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha`, `?autobuild=true` — mix and match to land on the exact build you need.
-* **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or existing values.
+* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset - works for both GitHub and Jenkins
+  artifacts), `?artifact=2` for GitHub Actions bundles, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`,
+  `?channel=Alpha`, `?autobuild=true` - mix and match to land on the exact build you need.
+* **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or
+  existing values.
 * **HTTP flexibility.** Add custom headers, rotate User-Agents, and route through proxies when needed.
 * **Performance built-in.**
 
@@ -68,25 +72,27 @@
 
 ### Download Sources
 
-| Source                | Release/Build Discovery | Notes / Selectors Supported                                |
-| --------------------- | ----------------------- | ---------------------------------------------------------- |
+| Source                | Release/Build Discovery | Notes / Selectors Supported                                                                                            |
+|-----------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------|
 | **GitHub**            | Releases & Actions      | `[N]`, `?artifact=2`, `?get=regex`, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?autobuild=true` |
-| **Jenkins**           | Latest build artifacts  | `[N]`, `?get=regex`                                        |
-| **SpigotMC (Spiget)** | Resource page URL       | Auto-resolves latest                                       |
-| **dev.bukkit**        | Project page            | Auto-resolves latest                                       |
-| **Modrinth**          | Project/version URL     | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`  |
-| **Hangar**            | Project/releases        | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha` |
-| **BusyBiscuit**       | Project index           | Auto-resolves                                              |
-| **blob.build**        | Build artifacts         | `?get=regex`                                               |
-| **Guizhanss v2**      | Project index           | Auto-resolves                                              |
-| **MineBBS**           | Resource page           | Auto-resolves                                              |
-| **CurseForge**        | Project/files           | `?get=regex`                                               |
-| **Generic**           | Direct `.jar` link      | Exact file URL                                             |
-| **Local file**       | Local path              | `file:`, `local:`, `path:`, or absolute/relative path      |
-| **Local script**     | Script stdout path      | `script:` or `exec:` (script prints jar path to stdout)    |
+| **Jenkins**           | Latest build artifacts  | `[N]`, `?get=regex`                                                                                                    |
+| **SpigotMC (Spiget)** | Resource page URL       | Auto-resolves latest                                                                                                   |
+| **dev.bukkit**        | Project page            | Auto-resolves latest                                                                                                   |
+| **Modrinth**          | Project/version URL     | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`                                                              |
+| **Hangar**            | Project/releases        | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha`                                            |
+| **BusyBiscuit**       | Project index           | Auto-resolves                                                                                                          |
+| **blob.build**        | Build artifacts         | `?get=regex`                                                                                                           |
+| **Guizhanss v2**      | Project index           | Auto-resolves                                                                                                          |
+| **MineBBS**           | Resource page           | Auto-resolves                                                                                                          |
+| **CurseForge**        | Project/files           | `?get=regex`                                                                                                           |
+| **Generic**           | Direct `.jar` link      | Exact file URL                                                                                                         |
+| **Local file**        | Local path              | `file:`, `local:`, `path:`, or absolute/relative path                                                                  |
+| **Local script**      | Script stdout path      | `script:` or `exec:` (script prints jar path to stdout)                                                                |
 
-> **Note:** GitHub and Jenkins links both accept `[N]` to pick the **N-th** artifact on their release/build pages (1-indexed).
-> **Tip:** You can pass just the **project root URL** for most sources (e.g., a GitHub repo or Spigot resource page) and let AutoUpdatePlugins choose the latest artifact. Add selectors for precision.
+> **Note:** GitHub and Jenkins links both accept `[N]` to pick the **N-th** artifact on their release/build pages (
+> 1-indexed).
+> **Tip:** You can pass just the **project root URL** for most sources (e.g., a GitHub repo or Spigot resource page) and
+> let AutoUpdatePlugins choose the latest artifact. Add selectors for precision.
 
 ### Server Platforms
 
@@ -118,7 +124,7 @@
 4. Edit **`plugins/AutoUpdatePlugins/config.yml`** and **`plugins/AutoUpdatePlugins/list.yml`**.
 5. Run **`/update`** or **`/aup update`** (or restart) to kick off the first check.
 
-> **Velocity / BungeeCord:** Same process — drop the jar in `plugins/`, configure, then trigger an update run.
+> **Velocity / BungeeCord:** Same process - drop the jar in `plugins/`, configure, then trigger an update run.
 
 ---
 
@@ -138,7 +144,8 @@
    ```
    /update
    ```
-5. New jars are staged atomically in your plugins folder (using temp/update paths under the hood). **Restart** the server to load the updated jars.
+5. New jars are staged atomically in your plugins folder (using temp/update paths under the hood). **Restart** the
+   server to load the updated jars.
 
 ---
 
@@ -146,11 +153,12 @@
 
 ### `config.yml`
 
-> The plugin **adds new options automatically** without overwriting your comments. Below is the full schema with defaults and notes.
+> The plugin **adds new options automatically** without overwriting your comments. Below is the full schema with
+> defaults and notes.
 
 ```yaml
 ################################################################################
-# AutoUpdatePlugins — Main Configuration
+# AutoUpdatePlugins - Main Configuration
 ################################################################################
 
 updates:
@@ -288,38 +296,44 @@ rollback:
 
 #### Safety & Recovery
 
-- `behavior.zipFileCheck`: validates `.jar` downloads extracted from archives before they ever reach the plugins directory.
-- `behavior.ignoreDuplicates`: skips deployment if the incoming jar matches the installed checksum, avoiding pointless restarts.
-- `rollback.*`: snapshots the previous jar, keeps a rotating history, and restores automatically when console output matches the configured failure patterns.
+- `behavior.zipFileCheck`: validates `.jar` downloads extracted from archives before they ever reach the plugins
+  directory.
+- `behavior.ignoreDuplicates`: skips deployment if the incoming jar matches the installed checksum, avoiding pointless
+  restarts.
+- `rollback.*`: snapshots the previous jar, keeps a rotating history, and restores automatically when console output
+  matches the configured failure patterns.
 
 #### Advanced Selectors Cheat Sheet
 
-| Flag / Selector              | Effect                                                                                  | Providers                     |
-| ---------------------------- | --------------------------------------------------------------------------------------- | ----------------------------- |
-| `?get=<regex>`               | Picks assets whose filename matches a regex                                             | GitHub, Jenkins, Modrinth, etc |
-| `[N]`                        | Chooses the N‑th asset (1-indexed)                                                      | GitHub Releases, Jenkins       |
-| `?artifact=2` / `?index=`    | Chooses the N‑th GitHub Actions artifact (defaults to 1)                                | GitHub Actions                 |
-| `?prerelease=true`           | Install the newest build regardless of stability tier                                  | GitHub, Modrinth, Hangar       |
-| `?alpha=true` / `?beta=true` | Prefer that channel while falling back to newer releases if no matching build exists   | GitHub, Modrinth, Hangar       |
-| `?latest=true`               | Same as `?prerelease=true`, but intended for explicit "always newest" behaviour        | GitHub, Modrinth, Hangar       |
-| `?channel=Alpha` / `Beta`    | Stick to a specific Hangar channel                                                      | Hangar                         |
-| `?autobuild=true`            | Trigger Gradle/Maven source builds when binaries are missing                           | GitHub                         |
+| Flag / Selector              | Effect                                                                               | Providers                      |
+|------------------------------|--------------------------------------------------------------------------------------|--------------------------------|
+| `?get=<regex>`               | Picks assets whose filename matches a regex                                          | GitHub, Jenkins, Modrinth, etc |
+| `[N]`                        | Chooses the N‑th asset (1-indexed)                                                   | GitHub Releases, Jenkins       |
+| `?artifact=2` / `?index=`    | Chooses the N‑th GitHub Actions artifact (defaults to 1)                             | GitHub Actions                 |
+| `?prerelease=true`           | Install the newest build regardless of stability tier                                | GitHub, Modrinth, Hangar       |
+| `?alpha=true` / `?beta=true` | Prefer that channel while falling back to newer releases if no matching build exists | GitHub, Modrinth, Hangar       |
+| `?latest=true`               | Same as `?prerelease=true`, but intended for explicit "always newest" behaviour      | GitHub, Modrinth, Hangar       |
+| `?channel=Alpha` / `Beta`    | Stick to a specific Hangar channel                                                   | Hangar                         |
+| `?autobuild=true`            | Trigger Gradle/Maven source builds when binaries are missing                         | GitHub                         |
 
 **Key options explained**
 
-* **`updates.schedule.cron` + `timezone`** — When set, cron **overrides** `interval`/`bootTime`.
-* **`updates.key`** — GitHub PAT for Releases/Actions access and higher rate limits (especially useful for public repos under heavy use or any private repos).
-* **`http.userAgents`** — Simple rotation to avoid brittle server-side filters.
-* **`proxy`** — Full support for HTTP/SOCKS proxies.
-* **`behavior.autoCompile`** — For GitHub repos: if there’s no release jar (or if the branch is newer than the last release by `branchNewerMonths`), the repo can be **built from source** using Gradle/Maven.
-* **`behavior.zipFileCheck`** — Open downloaded jars/zips to ensure they aren't corrupt before install.
-* **`behavior.ignoreDuplicates`** — Skip replacing a plugin if the new jar has the same MD5.
-* **`behavior.useUpdateFolder`** — Stage new jars in the server’s `update/` directory for atomic swaps.
-* **`behavior.restartAfterUpdate`** - Automatically restart after updates (delay via `behavior.restartDelaySec`, message via `behavior.restartMessage`).
-* **`behavior.debug`** — Verbose logging toggle, also controllable via `/aup debug`.
-* **`rollback`** — Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
-* **`paths`** — Customize temp/staging/output locations (falls back to sane defaults).
-* **`performance`** — See [Performance Tuning Guide](#performance-tuning-guide).
+* **`updates.schedule.cron` + `timezone`** - When set, cron **overrides** `interval`/`bootTime`.
+* **`updates.key`** - GitHub PAT for Releases/Actions access and higher rate limits (especially useful for public repos
+  under heavy use or any private repos).
+* **`http.userAgents`** - Simple rotation to avoid brittle server-side filters.
+* **`proxy`** - Full support for HTTP/SOCKS proxies.
+* **`behavior.autoCompile`** - For GitHub repos: if there’s no release jar (or if the branch is newer than the last
+  release by `branchNewerMonths`), the repo can be **built from source** using Gradle/Maven.
+* **`behavior.zipFileCheck`** - Open downloaded jars/zips to ensure they aren't corrupt before install.
+* **`behavior.ignoreDuplicates`** - Skip replacing a plugin if the new jar has the same MD5.
+* **`behavior.useUpdateFolder`** - Stage new jars in the server’s `update/` directory for atomic swaps.
+* **`behavior.restartAfterUpdate`** - Automatically restart after updates (delay via `behavior.restartDelaySec`, message
+  via `behavior.restartMessage`).
+* **`behavior.debug`** - Verbose logging toggle, also controllable via `/aup debug`.
+* **`rollback`** - Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
+* **`paths`** - Customize temp/staging/output locations (falls back to sane defaults).
+* **`performance`** - See [Performance Tuning Guide](#performance-tuning-guide).
 
 ---
 
@@ -336,15 +350,17 @@ Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 ```
 
-> Comment out a line with `#` to temporarily disable an entry. The `/aup enable` and `/aup disable` commands toggle this for you.
+> Comment out a line with `#` to temporarily disable an entry. The `/aup enable` and `/aup disable` commands toggle this
+> for you.
 
 **Selectors you can use**
 
-* **`[N]`** — Select the **N-th** jar asset (1-indexed) from a release or Jenkins build page. Example: `.../Essentials[3]`
-* **`?get=<regex>`** — Choose files whose names match a regex. Example: `?get=.*(paper|spigot).*\.jar`
-* **`?artifact=2`** — Pick a specific GitHub Actions artifact (defaults to the first).
-* **`?prerelease=true`** — Permit pre-releases.
-* **`?autobuild=true`** — Force a source build on GitHub even if a jar asset exists.
+* **`[N]`** - Select the **N-th** jar asset (1-indexed) from a release or Jenkins build page. Example:
+  `.../Essentials[3]`
+* **`?get=<regex>`** - Choose files whose names match a regex. Example: `?get=.*(paper|spigot).*\.jar`
+* **`?artifact=2`** - Pick a specific GitHub Actions artifact (defaults to the first).
+* **`?prerelease=true`** - Permit pre-releases.
+* **`?autobuild=true`** - Force a source build on GitHub even if a jar asset exists.
 
 > **Pro tip:** Combine selectors, e.g. `...?prerelease=true&get=.*spigot.*\.jar`.
 
@@ -367,7 +383,8 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 
 * **Java 21+ (virtual threads):** Keep `performance.maxParallel` higher (e.g., 8–16) for many small artifacts.
 * **Java 11+ (HTTP/2):** Great default throughput. Tune `maxPerHost` if a single origin hosts most of your jars.
-* **Java 8:** Increase `readTimeoutMs` if you see timeouts on large downloads; lower `maxParallel` if network is saturated.
+* **Java 8:** Increase `readTimeoutMs` if you see timeouts on large downloads; lower `maxParallel` if network is
+  saturated.
 * **Retries:** The plugin retries **`maxRetries`** times with exponential backoff (`backoffBaseMs` → `backoffMaxMs`).
 * **Per-download timeout:** Set `perDownloadTimeoutSec` to protect against stuck transfers; keep `0` to disable.
 * **I/O Paths:** Put `tempPath`/`updatePath` on fast local storage if possible.
@@ -378,32 +395,36 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 
 ### Commands
 
-* **`/update`** — Trigger an update run.
-* **`/aup download [names...]`** — Update all, or only the named plugins.
-* **`/aup update [names...]`** — Alias of `download`.
-* **`/aup stop`** — Request to stop the current updating process.
-* **`/aup reload`** — Reload the plugin configuration.
-* **`/aup add <name> <link>`** — Add a new entry to `list.yml`.
-* **`/aup remove <name>`** — Remove an entry from `list.yml`.
-* **`/aup list [page]`** — View the configured plugin list.
-* **`/aup debug <on|off|toggle|status>`** — Toggle verbose logging and persist the setting.
-* **`/aup enable|disable <name>`** — Toggle an entry (comment/uncomment in `list.yml`).
+* **`/update`** - Trigger an update run.
+* **`/aup download [names...]`** - Update all, or only the named plugins.
+* **`/aup update [names...]`** - Alias of `download`.
+* **`/aup stop`** - Request to stop the current updating process.
+* **`/aup reload`** - Reload the plugin configuration.
+* **`/aup add <name> <link>`** - Add a new entry to `list.yml`.
+* **`/aup remove <name>`** - Remove an entry from `list.yml`.
+* **`/aup list [page]`** - View the configured plugin list.
+* **`/aup debug <on|off|toggle|status>`** - Toggle verbose logging and persist the setting.
+* **`/aup enable|disable <name>`** - Toggle an entry (comment/uncomment in `list.yml`).
 
 ### Permissions
 
-* `autoupdateplugins.update` — Allows `/update`.
-* `autoupdateplugins.manage` — Allows `/aup ...` commands.
+* `autoupdateplugins.update` - Allows `/update`.
+* `autoupdateplugins.manage` - Allows `/aup ...` commands.
 
-> **Heads-up:** Most servers still require a **restart** to load updated jars. The plugin handles download & staging; you decide when to reboot (auto-restart available via `behavior.restartAfterUpdate`).
+> **Heads-up:** Most servers still require a **restart** to load updated jars. The plugin handles download & staging;
+> you decide when to reboot (auto-restart available via `behavior.restartAfterUpdate`).
 
 ---
 
 ## How It Works (Under the Hood)
 
-1. **Discovery.** For each entry in `list.yml`, the plugin detects the provider (GitHub, Jenkins, SpigotMC, etc.) and computes the **latest matching artifact** using your selectors.
-2. **Download (async).** Files are fetched with pooled connections; on Java 11+ it uses the HTTP/2 client; on Java 21+ it schedules downloads on virtual threads when available.
+1. **Discovery.** For each entry in `list.yml`, the plugin detects the provider (GitHub, Jenkins, SpigotMC, etc.) and
+   computes the **latest matching artifact** using your selectors.
+2. **Download (async).** Files are fetched with pooled connections; on Java 11+ it uses the HTTP/2 client; on Java 21+
+   it schedules downloads on virtual threads when available.
 3. **Validation.** Optional **zip integrity** checks and duplicate detection (`name + size`) avoid unnecessary writes.
-4. **Staging & Atomic Replace.** Files are written to a **temp** directory, then moved atomically into the **update/plugins** target so the server is never left in a partial state.
+4. **Staging & Atomic Replace.** Files are written to a **temp** directory, then moved atomically into the *
+   *update/plugins** target so the server is never left in a partial state.
 5. **Repeat.** According to your **interval** or **cron** schedule, with retries/backoff on transient failures.
 
 ---
@@ -476,10 +497,12 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 ## Troubleshooting & FAQ
 
 **Q: Updates downloaded, but server didn’t change.**
-A: Most platforms load jars only at startup. **Restart** your server after a run. Avoid hot-reloaders for complex plugins.
+A: Most platforms load jars only at startup. **Restart** your server after a run. Avoid hot-reloaders for complex
+plugins.
 
 **Q: GitHub rate-limited / cannot access Actions artifacts.**
-A: Add a **GitHub PAT** in `config.yml` → `updates.key`. For private repos, ensure the token has read access to Releases/Actions artifacts.
+A: Add a **GitHub PAT** in `config.yml` → `updates.key`. For private repos, ensure the token has read access to
+Releases/Actions artifacts.
 
 **Q: Wrong file selected.**
 A: Add a **`?get=regex`** or use **`[N]`** to pick an asset index. Confirm the regex escapes dots (e.g., `\\.jar`).
@@ -488,13 +511,16 @@ A: Add a **`?get=regex`** or use **`[N]`** to pick an asset index. Confirm the r
 A: Increase `readTimeoutMs`; decrease `maxParallel`; or set `perDownloadTimeoutSec` and tune `maxRetries`/backoff.
 
 **Q: Need pre-releases.**
-A: Use per-link flags like `?prerelease=true`, `?beta=true`, `?alpha=true`, or `?latest=true` (works on GitHub, Modrinth, and Hangar). Hangar also respects `?channel=Alpha`/`Beta`. Set `behavior.allowPreRelease: true` if you want this to be the default.
+A: Use per-link flags like `?prerelease=true`, `?beta=true`, `?alpha=true`, or `?latest=true` (works on GitHub,
+Modrinth, and Hangar). Hangar also respects `?channel=Alpha`/`Beta`. Set `behavior.allowPreRelease: true` if you want
+this to be the default.
 
 **Q: Behind a corporate proxy.**
 A: Configure `proxy.type/host/port`. If your proxy MITM-s TLS, ensure the Java trust store has the proxy CA.
 
 **Q: Build from source didn’t trigger.**
-A: Ensure `behavior.autoCompile.enable: true` and use `?autobuild=true` or let it kick in when no jar asset exists. The server must have outbound network access.
+A: Ensure `behavior.autoCompile.enable: true` and use `?autobuild=true` or let it kick in when no jar asset exists. The
+server must have outbound network access.
 
 ---
 
@@ -512,7 +538,8 @@ The built `.jar` will be in `target/`.
 
 ## Security Notes
 
-* Prefer **least-privileged tokens**. For GitHub, use a PAT limited to the repos you need with read permissions sufficient for Releases/Actions artifacts.
+* Prefer **least-privileged tokens**. For GitHub, use a PAT limited to the repos you need with read permissions
+  sufficient for Releases/Actions artifacts.
 * Treat third-party download links as untrusted: keep `zipFileCheck: true`.
 * Consider pinning sources with `?get=regex` to avoid accidentally switching to platform-incompatible jars.
 
@@ -528,7 +555,9 @@ The built `.jar` will be in `target/`.
 
 ## Acknowledgements
 
-**This is the original AutoUpdatePlugins project.** There are several forks of this plugin in the community; many of their good ideas and improvements have been incorporated here over time as well. Thanks especially to contributors and projects like ApliNi/AutoUpdatePlugins and others for inspiration and features.
+**This is the original AutoUpdatePlugins project.** There are several forks of this plugin in the community; many of
+their good ideas and improvements have been incorporated here over time as well. Thanks especially to contributors and
+projects like ApliNi/AutoUpdatePlugins and others for inspiration and features.
 
 ---
 

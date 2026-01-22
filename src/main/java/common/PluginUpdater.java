@@ -3,7 +3,6 @@ package common;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.jetbrains.annotations.NotNull;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
@@ -24,16 +23,10 @@ import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
-import java.nio.file.FileSystemException;
-import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.time.Instant;
+import java.nio.file.*;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1424,7 +1417,7 @@ public class PluginUpdater {
             want.add("waterfall");
         }
 
-        String[] avoidMods = new String[] { "fabric", "quilt", "forge", "neoforge", ".mrpack" };
+        String[] avoidMods = new String[]{"fabric", "quilt", "forge", "neoforge", ".mrpack"};
 
         JsonNode chosen = null;
         int bestFileScore = Integer.MIN_VALUE;
@@ -1946,9 +1939,9 @@ public class PluginUpdater {
             if (downloadUrl == null || downloadUrl.isEmpty()) {
                 if (UpdateOptions.debug) {
                     if (UpdateOptions.autoCompileEnable && UpdateOptions.autoCompileWhenNoJarAsset) {
-                        logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — attempting source build.");
+                        logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " - attempting source build.");
                     } else {
-                        logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " — source build disabled.");
+                        logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " - source build disabled.");
                     }
                 }
                 return attemptSourceBuild(repoPath, entry, value, key, true, forceBuild);
@@ -1963,7 +1956,7 @@ public class PluginUpdater {
                         if (UpdateOptions.autoCompileEnable) {
                             logger.info("[DEBUG] GitHub asset download failed, falling back to source build for " + repoPath);
                         } else {
-                            logger.info("[DEBUG] GitHub asset download failed for " + repoPath + " — auto-compile disabled.");
+                            logger.info("[DEBUG] GitHub asset download failed for " + repoPath + " - auto-compile disabled.");
                         }
                     }
                     return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
@@ -1974,10 +1967,10 @@ public class PluginUpdater {
                 if (UpdateOptions.debug) {
                     if (UpdateOptions.autoCompileEnable) {
                         logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
-                                + " — falling back to source build for " + repoPath);
+                                + " - falling back to source build for " + repoPath);
                     } else {
                         logger.info("[DEBUG] GitHub asset download threw " + t.getClass().getSimpleName()
-                                + " for " + repoPath + " — auto-compile disabled.");
+                                + " for " + repoPath + " - auto-compile disabled.");
                     }
                 }
                 return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
@@ -1987,10 +1980,10 @@ public class PluginUpdater {
             if (UpdateOptions.debug) {
                 if (UpdateOptions.autoCompileEnable) {
                     logger.info("[DEBUG] handleGitHubDownload failed for " + value + " : " + t.getMessage()
-                            + " — building from source as fallback.");
+                            + " - building from source as fallback.");
                 } else {
                     logger.info("[DEBUG] handleGitHubDownload failed for " + value + " : " + t.getMessage()
-                            + " — auto-compile disabled.");
+                            + " - auto-compile disabled.");
                 }
             }
             return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);

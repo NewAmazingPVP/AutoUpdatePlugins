@@ -206,9 +206,9 @@ public final class VelocityUpdate {
         if (message != null && !message.isEmpty()) {
             Component component = LegacyComponentSerializer.legacyAmpersand().deserialize(message);
             proxy.getScheduler().buildTask(this, () ->
-                    proxy.getAllPlayers().forEach(player -> player.sendMessage(component)))
-                .delay(Duration.ZERO)
-                .schedule();
+                            proxy.getAllPlayers().forEach(player -> player.sendMessage(component)))
+                    .delay(Duration.ZERO)
+                    .schedule();
         }
         proxy.getScheduler().buildTask(this, () -> {
             if (!UpdateOptions.restartAfterUpdate) {
