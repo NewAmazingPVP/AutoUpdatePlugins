@@ -1,5 +1,3 @@
-﻿# AutoUpdatePlugins
-
 <div align="center">
 
 # **AutoUpdatePlugins v12.2.0**
