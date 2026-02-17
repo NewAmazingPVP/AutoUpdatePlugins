@@ -320,6 +320,13 @@ public class PluginDownloader {
         }
 
         File target = new File(outputFilePath);
+        if (UpdateOptions.debug)
+            logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
+        if (shouldSkipDuplicateInstall(outTmp, target, pluginName)) {
+            cleanupQuietly(outTmp);
+            cleanupQuietly(rawTmp);
+            return true;
+        }
         if (UpdateOptions.rollbackEnabled) {
             try {
                 RollbackManager.prepareBackup(logger, pluginName, target.toPath());
@@ -328,14 +335,6 @@ public class PluginDownloader {
                     logger.log(java.util.logging.Level.FINE, "[DEBUG] Unable to snapshot rollback for " + pluginName, ex);
                 }
             }
-        }
-
-        if (UpdateOptions.debug)
-            logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-        if (UpdateOptions.ignoreDuplicates && target.exists() && target.length() == outTmp.length() && sameDigest(target, outTmp, "MD5")) {
-            cleanupQuietly(outTmp);
-            cleanupQuietly(rawTmp);
-            return true;
         }
         moveReplace(outTmp, target);
         if (UpdateOptions.rollbackEnabled) {
@@ -529,7 +528,7 @@ public class PluginDownloader {
                 File target = new File(outputFilePath);
                 if (UpdateOptions.debug)
                     logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-                if (target.exists() && target.length() == outTmp.length() && sameDigest(target, outTmp, "MD5")) {
+                if (shouldSkipDuplicateInstall(outTmp, target, fileName)) {
                     cleanupQuietly(outTmp);
                     cleanupQuietly(rawTmp);
                     return true;
@@ -1104,6 +1103,9 @@ public class PluginDownloader {
         String outputFilePath = resolveOutputPath(fileName, customPath);
         File out = new File(outputFilePath);
         if (UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
+        if (shouldSkipDuplicateInstall(jar, out, fileName)) {
+            return true;
+        }
         copyFile(jar, out);
         notifyInstalled(fileName, out.toPath());
         return true;
@@ -1258,6 +1260,74 @@ public class PluginDownloader {
             return true;
         }
         return true;
+    }
+
+    private boolean shouldSkipDuplicateInstall(File incoming, File target, String pluginName) {
+        if (!UpdateOptions.ignoreDuplicates || incoming == null || !incoming.exists()) {
+            return false;
+        }
+        if (hasSameContent(target, incoming)) {
+            logDuplicateSkip(pluginName, target);
+            return true;
+        }
+
+        File livePlugin = resolveLivePluginTarget(pluginName, target);
+        if (hasSameContent(livePlugin, incoming)) {
+            logDuplicateSkip(pluginName, livePlugin);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean hasSameContent(File existing, File incoming) {
+        return existing != null
+                && existing.exists()
+                && existing.length() == incoming.length()
+                && sameDigest(existing, incoming, "MD5");
+    }
+
+    private void logDuplicateSkip(String pluginName, File matched) {
+        if (UpdateOptions.debug && matched != null) {
+            logger.info("[DEBUG] Duplicate detected for " + pluginName + "; incoming jar matches " + matched.getAbsolutePath() + ". Skipping install.");
+        }
+    }
+
+    private File resolveLivePluginTarget(String pluginName, File target) {
+        if (!UpdateOptions.useUpdateFolder || target == null || pluginName == null || pluginName.trim().isEmpty()) {
+            return null;
+        }
+        Path targetPath = target.toPath().toAbsolutePath().normalize();
+        Path targetParent = targetPath.getParent();
+        if (targetParent == null) {
+            return null;
+        }
+
+        String configured = sanitizeCustomPath(UpdateOptions.updatePath);
+        Path updateDir = (configured != null && !configured.isEmpty())
+                ? Paths.get(configured).toAbsolutePath().normalize()
+                : Paths.get("plugins", "update").toAbsolutePath().normalize();
+        if (!pathsEqual(targetParent, updateDir)) {
+            return null;
+        }
+
+        File live = Paths.get("plugins", pluginName + ".jar").toFile();
+        if (!live.exists()) {
+            return null;
+        }
+        if (pathsEqual(live.toPath(), targetPath)) {
+            return null;
+        }
+        return live;
+    }
+
+    private boolean pathsEqual(Path left, Path right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        String a = left.toAbsolutePath().normalize().toString();
+        String b = right.toAbsolutePath().normalize().toString();
+        boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+        return windows ? a.equalsIgnoreCase(b) : a.equals(b);
     }
 
     private boolean sameDigest(File a, File b, String algorithm) {
