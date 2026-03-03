@@ -236,7 +236,9 @@ public class PluginUpdater {
                 : UpdateOptions.useUpdateFolder;
         if (useUpdateFolder) {
             Path updateDir;
-            if (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty()) {
+            if (entryUpdatePath != null && !entryUpdatePath.isEmpty()) {
+                updateDir = Paths.get(entryUpdatePath);
+            } else if (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty()) {
                 updateDir = Paths.get(UpdateOptions.updatePath);
             } else {
                 updateDir = pluginsDir.resolve("update");

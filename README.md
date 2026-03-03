@@ -400,7 +400,7 @@ GeyserExtensionStaged: "https://github.com/GeyserMC/Hydraulic/releases?get=.*\\.
 
 * **Legacy syntax:** `... | plugins/SomeFolder/` (treated as `filePath` override).
 * **`filePath=<dir>`** - Per-entry destination directory for the installed jar.
-* **`updatePath=<dir>`** - Per-entry update staging directory (used when `useUpdateFolder=true` for that entry).
+* **`updatePath=<dir>`** - Per-entry update staging directory (used when `useUpdateFolder=true`), even if `filePath` is not overridden.
 * **`useUpdateFolder=true|false`** - Per-entry staging toggle.
 * **Default behavior:** if an entry sets `filePath`, `useUpdateFolder` defaults to **`false`** for that entry unless you explicitly set it to `true`.
 

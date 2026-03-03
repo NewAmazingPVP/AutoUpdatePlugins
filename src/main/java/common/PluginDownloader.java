@@ -411,6 +411,9 @@ public class PluginDownloader {
         String updateDir = (configuredUpdatePath != null && !configuredUpdatePath.isEmpty())
                 ? ensureDir(configuredUpdatePath)
                 : ensureDir(basePlugins + "update/");
+        if (customUpdatePath != null && !customUpdatePath.isEmpty()) {
+            updateDir = ensureDir(customUpdatePath);
+        }
         String stagedPath = updateDir + fileName + ".jar";
         if (mainJar.exists()) {
             return new InstallPaths(stagedPath, liveDefault);
