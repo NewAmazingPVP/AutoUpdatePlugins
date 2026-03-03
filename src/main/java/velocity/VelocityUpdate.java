@@ -202,14 +202,12 @@ public final class VelocityUpdate {
             return;
         }
         int delay = Math.max(0, UpdateOptions.restartDelaySec);
-        String message = formatRestartMessage(UpdateOptions.restartMessage, delay);
-        if (message != null && !message.isEmpty()) {
-            Component component = LegacyComponentSerializer.legacyAmpersand().deserialize(message);
-            proxy.getScheduler().buildTask(this, () ->
-                            proxy.getAllPlayers().forEach(player -> player.sendMessage(component)))
-                    .delay(Duration.ZERO)
-                    .schedule();
-        }
+        long delaySec = Math.max(0, delay);
+
+        scheduleLegacyRestartMessage(delaySec);
+        scheduleLegacyPreRestartCommand(delaySec);
+        scheduleConfiguredRestartActions(delaySec);
+
         proxy.getScheduler().buildTask(this, () -> {
             if (!UpdateOptions.restartAfterUpdate) {
                 restartScheduled.set(false);
@@ -220,14 +218,87 @@ public final class VelocityUpdate {
         }).delay(Duration.ofSeconds(delay)).schedule();
     }
 
-    private String formatRestartMessage(String raw, long delaySec) {
+    private void scheduleLegacyRestartMessage(long totalDelaySec) {
+        String message = formatRestartTemplate(UpdateOptions.restartMessage, totalDelaySec, totalDelaySec);
+        if (message == null || message.isEmpty()) return;
+        scheduleRestartAction(0L, () -> broadcastRestartMessage(message));
+    }
+
+    private void scheduleLegacyPreRestartCommand(long totalDelaySec) {
+        String command = formatRestartTemplate(UpdateOptions.preRestartCommand, totalDelaySec, totalDelaySec);
+        if (command == null || command.isEmpty()) return;
+        scheduleRestartAction(0L, () -> dispatchConsoleCommand(command));
+    }
+
+    private void scheduleConfiguredRestartActions(long totalDelaySec) {
+        List<UpdateOptions.RestartAction> actions = new ArrayList<>(UpdateOptions.restartActions);
+        for (UpdateOptions.RestartAction action : actions) {
+            if (action == null) continue;
+            long when = action.timeToRestartSec;
+            long runAfter = totalDelaySec - when;
+            if (runAfter < 0) {
+                if (UpdateOptions.debug) {
+                    logger.info("[DEBUG] Skipping restartCommands entry at " + when + "s; restartDelaySec is only " + totalDelaySec + "s.");
+                }
+                continue;
+            }
+            String message = formatRestartTemplate(action.message, when, totalDelaySec);
+            String command = formatRestartTemplate(action.command, when, totalDelaySec);
+            if ((message == null || message.isEmpty()) && (command == null || command.isEmpty())) {
+                continue;
+            }
+            scheduleRestartAction(runAfter, () -> {
+                if (message != null && !message.isEmpty()) {
+                    broadcastRestartMessage(message);
+                }
+                if (command != null && !command.isEmpty()) {
+                    dispatchConsoleCommand(command);
+                }
+            });
+        }
+    }
+
+    private void scheduleRestartAction(long runAfterSec, Runnable action) {
+        proxy.getScheduler().buildTask(this, () -> {
+            if (!UpdateOptions.restartAfterUpdate) {
+                return;
+            }
+            action.run();
+        }).delay(Duration.ofSeconds(Math.max(0, runAfterSec))).schedule();
+    }
+
+    private void broadcastRestartMessage(String message) {
+        if (message == null || message.trim().isEmpty()) return;
+        Component component = LegacyComponentSerializer.legacyAmpersand().deserialize(message);
+        proxy.getAllPlayers().forEach(player -> player.sendMessage(component));
+    }
+
+    private void dispatchConsoleCommand(String rawCommand) {
+        if (rawCommand == null) return;
+        String command = rawCommand.trim();
+        if (command.isEmpty()) return;
+        if (command.startsWith("/")) {
+            command = command.substring(1).trim();
+        }
+        if (command.isEmpty()) return;
+        proxy.getCommandManager().executeAsync(proxy.getConsoleCommandSource(), command);
+    }
+
+    private String formatRestartTemplate(String raw, long secondsUntilRestart, long totalDelaySec) {
         if (raw == null) return "";
         String msg = raw;
-        String delayStr = Long.toString(delaySec);
-        msg = msg.replace("{delay}", delayStr)
-                .replace("{seconds}", delayStr)
-                .replace("%delay%", delayStr)
-                .replace("%seconds%", delayStr);
+        String seconds = Long.toString(Math.max(0, secondsUntilRestart));
+        String total = Long.toString(Math.max(0, totalDelaySec));
+        msg = msg.replace("{delay}", seconds)
+                .replace("{seconds}", seconds)
+                .replace("%delay%", seconds)
+                .replace("%seconds%", seconds)
+                .replace("{timeToRestart}", seconds)
+                .replace("%timeToRestart%", seconds)
+                .replace("{totalDelay}", total)
+                .replace("%totalDelay%", total)
+                .replace("{totalSeconds}", total)
+                .replace("%totalSeconds%", total);
         return msg.trim();
     }
 
@@ -310,6 +381,10 @@ public final class VelocityUpdate {
             UpdateOptions.restartDelaySec = Math.max(0, cfgMgr.getInt("behavior.restartDelaySec"));
             String restartMsg = cfgMgr.getString("behavior.restartMessage");
             UpdateOptions.restartMessage = (restartMsg != null) ? restartMsg : UpdateOptions.restartMessage;
+            String preRestartCmd = cfgMgr.getString("behavior.preRestartCommand");
+            UpdateOptions.preRestartCommand = (preRestartCmd != null) ? preRestartCmd.trim() : "";
+            UpdateOptions.restartActions.clear();
+            UpdateOptions.restartActions.addAll(RestartActionParser.parse(cfgMgr.getList("behavior.restartCommands"), logger));
             UpdateOptions.tempPath = cfgMgr.getString("paths.tempPath");
             UpdateOptions.updatePath = cfgMgr.getString("paths.updatePath");
             UpdateOptions.rollbackPath = cfgMgr.getString("paths.rollbackPath");
@@ -381,6 +456,8 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("behavior.restartAfterUpdate", false, "Restart the proxy automatically after updates.");
         cfgMgr.addDefault("behavior.restartDelaySec", 5, "Delay in seconds before restarting after updates.");
         cfgMgr.addDefault("behavior.restartMessage", "Server restarting to apply updates.", "Broadcast message before restarting (supports {delay}).");
+        cfgMgr.addDefault("behavior.preRestartCommand", "", "Console command to run when restart is scheduled (optional).");
+        cfgMgr.addDefault("behavior.restartCommands", new ArrayList<>(), "Timed pre-restart actions: list of {timeToRestart, command, message}.");
 
 
         cfgMgr.addDefault("paths.tempPath", "", "Custom temp/cache path (optional)");

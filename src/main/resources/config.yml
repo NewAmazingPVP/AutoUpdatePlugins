@@ -70,6 +70,17 @@ behavior:
   restartDelaySec: 5
   # Broadcast message before restarting (supports {delay}).
   restartMessage: "Server restarting to apply updates."
+  # Optional console command executed when restart is scheduled.
+  # Supports the same placeholders as restartMessage.
+  preRestartCommand: ""
+  # Optional timed pre-restart actions.
+  # Each entry can contain:
+  #   timeToRestart: <seconds before restart>
+  #   command: "<console command>"
+  #   message: "<broadcast message>"
+  # Entries where timeToRestart > restartDelaySec are skipped.
+  # Placeholders: {delay}, {seconds}, {timeToRestart}, {totalDelay}, {totalSeconds}
+  restartCommands: [ ]
 
 
 

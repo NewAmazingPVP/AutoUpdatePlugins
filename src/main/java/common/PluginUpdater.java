@@ -190,24 +190,57 @@ public class PluginUpdater {
     }
 
     private static Path decideInstallPath(String pluginName, String customPath) {
-        if (customPath != null && !customPath.trim().isEmpty()) {
-            String cp = sanitizeCustomPath(customPath);
-            if (cp != null && !cp.isEmpty()) {
-                Path dir = Paths.get(cp);
-                try {
-                    Files.createDirectories(dir);
-                } catch (Exception ignored) {
-                }
-                return dir.resolve(pluginName + ".jar");
+        EntryPathOptions options = EntryPathOptions.parse(customPath, null);
+        String entryFilePath = options.getFilePath();
+        String entryUpdatePath = options.getUpdatePath();
+        Boolean entryUseUpdateFolder = options.getUseUpdateFolder();
+
+        String configuredFilePath = UpdateOptions.filePath;
+        String effectiveFilePath = (entryFilePath != null && !entryFilePath.isEmpty()) ? entryFilePath : configuredFilePath;
+        if (effectiveFilePath != null && !effectiveFilePath.trim().isEmpty()) {
+            Path fileDir = Paths.get(effectiveFilePath.trim());
+            try {
+                Files.createDirectories(fileDir);
+            } catch (Exception ignored) {
             }
+            Path liveJar = fileDir.resolve(pluginName + ".jar");
+
+            boolean useUpdateFolder = (entryUseUpdateFolder != null)
+                    ? entryUseUpdateFolder.booleanValue()
+                    : (entryFilePath != null && !entryFilePath.isEmpty()
+                    ? false
+                    : UpdateOptions.useUpdateFolder);
+            if (!useUpdateFolder) {
+                return liveJar;
+            }
+
+            Path updateDir;
+            if (entryUpdatePath != null && !entryUpdatePath.isEmpty()) {
+                updateDir = Paths.get(entryUpdatePath);
+            } else if (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty()) {
+                updateDir = Paths.get(UpdateOptions.updatePath);
+            } else {
+                updateDir = fileDir.resolve("update");
+            }
+            try {
+                Files.createDirectories(updateDir);
+            } catch (Exception ignored) {
+            }
+            return Files.exists(liveJar) ? updateDir.resolve(pluginName + ".jar") : liveJar;
         }
+
         Path pluginsDir = Paths.get("plugins");
         Path mainJar = pluginsDir.resolve(pluginName + ".jar");
-
-        if (UpdateOptions.useUpdateFolder) {
-            Path updateDir = (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty())
-                    ? Paths.get(UpdateOptions.updatePath)
-                    : pluginsDir.resolve("update");
+        boolean useUpdateFolder = (entryUseUpdateFolder != null)
+                ? entryUseUpdateFolder.booleanValue()
+                : UpdateOptions.useUpdateFolder;
+        if (useUpdateFolder) {
+            Path updateDir;
+            if (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty()) {
+                updateDir = Paths.get(UpdateOptions.updatePath);
+            } else {
+                updateDir = pluginsDir.resolve("update");
+            }
             try {
                 Files.createDirectories(updateDir);
             } catch (Exception ignored) {
@@ -225,26 +258,6 @@ public class PluginUpdater {
         if (i < 0) return null;
         String tail = raw.substring(i + 1).trim();
         return tail.isEmpty() ? null : tail;
-    }
-
-    private static String stripLinkPart(String raw) {
-        if (raw == null) return null;
-        int i = raw.indexOf('|');
-        return i < 0 ? raw.trim() : raw.substring(0, i).trim();
-    }
-
-    private static String sanitizeCustomPath(String cp) {
-        if (cp == null) return null;
-        cp = cp.trim();
-        if (cp.isEmpty()) return null;
-        cp = expandUserHome(cp);
-        try {
-            Path path = Paths.get(cp).normalize();
-            String normalized = path.toString();
-            return normalized.isEmpty() ? null : normalized;
-        } catch (InvalidPathException ex) {
-            return null;
-        }
     }
 
     private static String expandUserHome(String path) {

@@ -46,9 +46,11 @@
 * **One list, many sources.** Pull updates from GitHub Releases/Actions, Jenkins, SpigotMC (Spiget), dev.bukkit,
   Modrinth, Hangar, BusyBiscuit, blob.build, Guizhanss v2, MineBBS, CurseForge, or any page with a direct `.jar` link.
 * **Local sources.** Point at local jar files or run scripts that output a jar path for custom/patched builds.
-* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset - works for both GitHub and Jenkins
-  artifacts), `?artifact=2` for GitHub Actions bundles, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`,
+* **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset), `?artifact=2` / `?index=2` / `?zip=2` for
+  GitHub Actions bundles, `?prerelease=true` (or `?pre-release=true`), `?alpha=true`, `?beta=true`, `?latest=true`,
   `?channel=Alpha`, `?autobuild=true` - mix and match to land on the exact build you need.
+* **Per-entry install routing.** Override `filePath` and `updatePath` directly in each `list.yml` line, and choose
+  whether that entry uses an update folder (`useUpdateFolder=true|false`).
 * **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or
   existing values.
 * **HTTP flexibility.** Add custom headers, rotate User-Agents, and route through proxies when needed.
@@ -72,12 +74,12 @@
 
 | Source                | Release/Build Discovery | Notes / Selectors Supported                                                                                            |
 |-----------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------|
-| **GitHub**            | Releases & Actions      | `[N]`, `?artifact=2`, `?get=regex`, `?prerelease=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?autobuild=true` |
+| **GitHub**            | Releases & Actions      | `[N]`, `?artifact=2`, `?index=2`, `?zip=2`, `?get=regex`, `?prerelease=true`, `?pre-release=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?autobuild=true` |
 | **Jenkins**           | Latest build artifacts  | `[N]`, `?get=regex`                                                                                                    |
 | **SpigotMC (Spiget)** | Resource page URL       | Auto-resolves latest                                                                                                   |
 | **dev.bukkit**        | Project page            | Auto-resolves latest                                                                                                   |
 | **Modrinth**          | Project/version URL     | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`                                                              |
-| **Hangar**            | Project/releases        | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=Alpha`                                            |
+| **Hangar**            | Project/releases        | `?get=regex`, `?alpha=true`, `?beta=true`, `?latest=true`, `?channel=release|beta|alpha|latest`                      |
 | **BusyBiscuit**       | Project index           | Auto-resolves                                                                                                          |
 | **blob.build**        | Build artifacts         | `?get=regex`                                                                                                           |
 | **Guizhanss v2**      | Project index           | Auto-resolves                                                                                                          |
@@ -227,6 +229,16 @@ behavior:
   restartDelaySec: 5
   # Broadcast message before restarting (supports {delay}).
   restartMessage: "Server restarting to apply updates."
+  # Optional console command executed when restart is scheduled.
+  # Supports placeholders: {delay}, {seconds}, {timeToRestart}, {totalDelay}, {totalSeconds}
+  preRestartCommand: ""
+  # Optional timed pre-restart actions.
+  # Each entry may define:
+  #   timeToRestart: <seconds before restart>
+  #   command: "<console command>"
+  #   message: "<broadcast message>"
+  # Entries where timeToRestart > restartDelaySec are skipped.
+  restartCommands: [ ]
 
 
 
@@ -284,10 +296,11 @@ rollback:
 #
 # Tips:
 # - Select assets: append [N] to pick the Nth asset or use ?get=<regex> to match by filename.
-# - GitHub Actions ZIPs: use ?artifact=2 (or ?index=/ ?zip=) to pick a specific build, default is the first.
+# - GitHub Actions ZIPs: use ?artifact=2 (or ?index=2 / ?zip=2) to pick a specific build, default is the first.
 # - Pre-releases: set behavior.allowPreRelease: true or append ?prerelease=true on a GitHub link.
 # - Channel flags: ?beta=true, ?alpha=true, ?latest=true, or ?channel=Alpha/Beta for Hangar.
 # - Modrinth/Hangar obey the same flags (?alpha, ?beta, ?latest) to pick non-release builds when desired.
+# - Per-entry install path override: append | plugins/SomeFolder/ (legacy) or | filePath=... | updatePath=... | useUpdateFolder=true
 # - Force source build from GitHub: append ?autobuild=true to a GitHub repo URL.
 
 ```
@@ -306,12 +319,12 @@ rollback:
 | Flag / Selector              | Effect                                                                               | Providers                      |
 |------------------------------|--------------------------------------------------------------------------------------|--------------------------------|
 | `?get=<regex>`               | Picks assets whose filename matches a regex                                          | GitHub, Jenkins, Modrinth, etc |
-| `[N]`                        | Chooses the N‑th asset (1-indexed)                                                   | GitHub Releases, Jenkins       |
-| `?artifact=2` / `?index=`    | Chooses the N‑th GitHub Actions artifact (defaults to 1)                             | GitHub Actions                 |
-| `?prerelease=true`           | Install the newest build regardless of stability tier                                | GitHub, Modrinth, Hangar       |
+| `[N]`                        | Chooses the N-th asset (1-indexed)                                                   | GitHub Releases/Actions, Jenkins |
+| `?artifact=2` / `?index=` / `?zip=` | Chooses the N-th GitHub Actions artifact (defaults to 1)                       | GitHub Actions                 |
+| `?prerelease=true` / `?pre-release=true` | Install the newest build regardless of stability tier                     | GitHub, Modrinth, Hangar       |
 | `?alpha=true` / `?beta=true` | Prefer that channel while falling back to newer releases if no matching build exists | GitHub, Modrinth, Hangar       |
 | `?latest=true`               | Same as `?prerelease=true`, but intended for explicit "always newest" behaviour      | GitHub, Modrinth, Hangar       |
-| `?channel=Alpha` / `Beta`    | Stick to a specific Hangar channel                                                   | Hangar                         |
+| `?channel=release|beta|alpha|latest` | Channel preference (works with Hangar channel names and release-tier preference) | Hangar, GitHub, Modrinth       |
 | `?autobuild=true`            | Trigger Gradle/Maven source builds when binaries are missing                         | GitHub                         |
 
 **Key options explained**
@@ -328,24 +341,44 @@ rollback:
 * **`behavior.useUpdateFolder`** - Stage new jars in the server’s `update/` directory for atomic swaps.
 * **`behavior.restartAfterUpdate`** - Automatically restart after updates (delay via `behavior.restartDelaySec`, message
   via `behavior.restartMessage`).
+* **`behavior.preRestartCommand`** - Run a console command when restart is scheduled.
+* **`behavior.restartCommands`** - Run multiple timed pre-restart commands/messages (for example at 60/30/5 seconds).
 * **`behavior.debug`** - Verbose logging toggle, also controllable via `/aup debug`.
 * **`rollback`** - Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
 * **`paths`** - Customize temp/staging/output locations (falls back to sane defaults).
 * **`performance`** - See [Performance Tuning Guide](#performance-tuning-guide).
 
+**Pre-restart commands example**
+
+```yaml
+behavior:
+  restartAfterUpdate: true
+  restartDelaySec: 60
+  restartMessage: "&eServer restart in {seconds}s"
+  preRestartCommand: "lp broadcast &eServer restart scheduled in {seconds}s"
+  restartCommands:
+    - timeToRestart: 30
+      command: "lp broadcast &eRestart in {timeToRestart}s"
+    - timeToRestart: 5
+      message: "&cRestart in {timeToRestart}s"
+```
+
 ---
 
 ### `list.yml`
 
-A simple mapping of **plugin display name ➜ source URL (+ optional selectors)**.
+A simple mapping of **plugin display name -> source string**, with optional selectors and per-entry path overrides.
 
 ```yaml
 # A list of plugins to update.
-# Format: <plugin-name>: <download-url>
+# Format: <plugin-name>: <source>
+# Source can be a URL, local file path (`file:`, `local:`, `path:`), or script (`script:`, `exec:`).
 
 ViaVersion: "https://www.spigotmc.org/resources/viaversion.19254/"
 Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
+GeyserExtension: "https://github.com/GeyserMC/Hydraulic/releases?get=.*\\.jar | plugins/Geyser-Spigot/extensions/"
+GeyserExtensionStaged: "https://github.com/GeyserMC/Hydraulic/releases?get=.*\\.jar | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
 ```
 
 > Comment out a line with `#` to temporarily disable an entry. The `/aup enable` and `/aup disable` commands toggle this
@@ -353,14 +386,23 @@ EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 
 **Selectors you can use**
 
-* **`[N]`** - Select the **N-th** jar asset (1-indexed) from a release or Jenkins build page. Example:
-  `.../Essentials[3]`
+* **`[N]`** - Select the **N-th** jar asset (1-indexed) from GitHub/Jenkins listings. Example: `.../Essentials[3]`
 * **`?get=<regex>`** - Choose files whose names match a regex. Example: `?get=.*(paper|spigot).*\.jar`
-* **`?artifact=2`** - Pick a specific GitHub Actions artifact (defaults to the first).
-* **`?prerelease=true`** - Permit pre-releases.
+* **`?artifact=2`** / **`?index=2`** / **`?zip=2`** - Pick a specific GitHub Actions artifact (defaults to first).
+* **`?prerelease=true`** / **`?pre-release=true`** - Permit pre-releases.
+* **`?alpha=true`**, **`?beta=true`**, **`?latest=true`** - Fine-tune release channel preference.
+* **`?channel=release|beta|alpha|latest`** - Explicit channel preference (especially useful on Hangar).
 * **`?autobuild=true`** - Force a source build on GitHub even if a jar asset exists.
 
 > **Pro tip:** Combine selectors, e.g. `...?prerelease=true&get=.*spigot.*\.jar`.
+
+**Per-entry path options**
+
+* **Legacy syntax:** `... | plugins/SomeFolder/` (treated as `filePath` override).
+* **`filePath=<dir>`** - Per-entry destination directory for the installed jar.
+* **`updatePath=<dir>`** - Per-entry update staging directory (used when `useUpdateFolder=true` for that entry).
+* **`useUpdateFolder=true|false`** - Per-entry staging toggle.
+* **Default behavior:** if an entry sets `filePath`, `useUpdateFolder` defaults to **`false`** for that entry unless you explicitly set it to `true`.
 
 ---
 
@@ -478,6 +520,16 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 
   ```
   DirectJar: "https://downloads.example.com/plugins/DirectJar-1.2.3.jar"
+  ```
+* **Custom install folder (direct replace):**
+
+  ```
+  GeyserExtension: "https://example.com/GeyserExtension.jar | plugins/Geyser-Spigot/extensions/"
+  ```
+* **Custom install folder (stage in custom update folder):**
+
+  ```
+  GeyserExtension: "https://example.com/GeyserExtension.jar | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
   ```
 * **Local file (patched jar on disk):**
 

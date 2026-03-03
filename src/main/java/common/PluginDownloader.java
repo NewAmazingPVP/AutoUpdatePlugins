@@ -169,7 +169,8 @@ public class PluginDownloader {
 
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
-        String outputFilePath = resolveOutputPath(fileName, customPath);
+        InstallPaths installPaths = resolveInstallPaths(fileName, customPath);
+        String outputFilePath = installPaths.targetPath;
         String outputTempPath = outputFilePath + ".temp";
 
         try {
@@ -191,7 +192,7 @@ public class PluginDownloader {
                     }
 
                     if (downloaded) {
-                        if (postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName)) {
+                        if (postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath)) {
                             return true;
                         }
                     }
@@ -218,7 +219,8 @@ public class PluginDownloader {
         }
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
-        String outputFilePath = resolveOutputPath(fileName, customPath);
+        InstallPaths installPaths = resolveInstallPaths(fileName, customPath);
+        String outputFilePath = installPaths.targetPath;
         String outputTempPath = outputFilePath + ".temp";
 
         File rawTmp = new File(rawTempPath);
@@ -228,7 +230,7 @@ public class PluginDownloader {
 
         Files.copy(source, rawTmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
         try {
-            return postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName);
+            return postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath);
         } finally {
             cleanupQuietly(new File(rawTempPath));
             cleanupQuietly(new File(outputTempPath));
@@ -304,7 +306,7 @@ public class PluginDownloader {
         return true;
     }
 
-    private boolean postProcessDownloadedFile(File rawTmp, File outTmp, String outputFilePath, String rawTempPath, String outputTempPath, String pluginName) throws IOException {
+    private boolean postProcessDownloadedFile(File rawTmp, File outTmp, String outputFilePath, String rawTempPath, String outputTempPath, String pluginName, String livePathOverride) throws IOException {
         if (isZipFile(rawTempPath)) {
             boolean extracted = extractFirstJarFromZip(rawTempPath, outputTempPath);
             if (!extracted) {
@@ -322,7 +324,7 @@ public class PluginDownloader {
         File target = new File(outputFilePath);
         if (UpdateOptions.debug)
             logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-        if (shouldSkipDuplicateInstall(outTmp, target, pluginName)) {
+        if (shouldSkipDuplicateInstall(outTmp, target, pluginName, livePathOverride)) {
             cleanupQuietly(outTmp);
             cleanupQuietly(rawTmp);
             return true;
@@ -349,41 +351,81 @@ public class PluginDownloader {
     }
 
 
-    private String getString(String fileName) {
+    private InstallPaths resolveInstallPaths(String fileName, String customPath) {
+        EntryPathOptions options = EntryPathOptions.parse(customPath, logger);
+        String customFilePath = options.getFilePath();
+        String customUpdatePath = options.getUpdatePath();
+        Boolean customUseUpdateFolder = options.getUseUpdateFolder();
+
         String basePlugins = "plugins/";
         String configuredFilePath = UpdateOptions.filePath;
         String configuredUpdatePath = UpdateOptions.updatePath;
 
-        if (configuredFilePath != null && !configuredFilePath.isEmpty()) {
-            return ensureDir(configuredFilePath) + fileName + ".jar";
-        }
-
-        File mainJar = new File(basePlugins + fileName + ".jar");
-
-        if (UpdateOptions.useUpdateFolder) {
-            String updateDir = (configuredUpdatePath != null && !configuredUpdatePath.isEmpty())
-                    ? ensureDir(configuredUpdatePath)
-                    : ensureDir(basePlugins + "update/");
-
-            if (mainJar.exists()) {
-                return updateDir + fileName + ".jar";
-            } else {
-                return basePlugins + fileName + ".jar";
+        String effectiveFilePath = customFilePath;
+        if (effectiveFilePath == null || effectiveFilePath.isEmpty()) {
+            if (configuredFilePath != null && !configuredFilePath.trim().isEmpty()) {
+                effectiveFilePath = configuredFilePath.trim();
             }
         }
 
-        return basePlugins + fileName + ".jar";
+        if (effectiveFilePath != null && !effectiveFilePath.isEmpty()) {
+            String livePath = ensureDir(effectiveFilePath) + fileName + ".jar";
+            boolean useUpdateFolder = (customUseUpdateFolder != null)
+                    ? customUseUpdateFolder.booleanValue()
+                    : (customFilePath != null && !customFilePath.isEmpty()
+                    ? false
+                    : UpdateOptions.useUpdateFolder);
+
+            if (!useUpdateFolder) {
+                return new InstallPaths(livePath, null);
+            }
+
+            String updateDir = customUpdatePath;
+            if (updateDir == null || updateDir.isEmpty()) {
+                if (customFilePath != null && !customFilePath.isEmpty()) {
+                    updateDir = ensureDir(effectiveFilePath) + "update";
+                } else if (configuredUpdatePath != null && !configuredUpdatePath.isEmpty()) {
+                    updateDir = configuredUpdatePath;
+                } else {
+                    updateDir = ensureDir(effectiveFilePath) + "update";
+                }
+            }
+
+            String stagedPath = ensureDir(updateDir) + fileName + ".jar";
+            File liveJar = new File(livePath);
+            if (liveJar.exists()) {
+                return new InstallPaths(stagedPath, livePath);
+            }
+            return new InstallPaths(livePath, null);
+        }
+
+        boolean useUpdateFolder = (customUseUpdateFolder != null)
+                ? customUseUpdateFolder.booleanValue()
+                : UpdateOptions.useUpdateFolder;
+        File mainJar = new File(basePlugins + fileName + ".jar");
+        String liveDefault = basePlugins + fileName + ".jar";
+        if (!useUpdateFolder) {
+            return new InstallPaths(liveDefault, null);
+        }
+
+        String updateDir = (configuredUpdatePath != null && !configuredUpdatePath.isEmpty())
+                ? ensureDir(configuredUpdatePath)
+                : ensureDir(basePlugins + "update/");
+        String stagedPath = updateDir + fileName + ".jar";
+        if (mainJar.exists()) {
+            return new InstallPaths(stagedPath, liveDefault);
+        }
+        return new InstallPaths(liveDefault, null);
     }
 
-    private String resolveOutputPath(String fileName, String customPath) {
-        if (customPath != null && !customPath.trim().isEmpty()) {
-            String cp = sanitizeCustomPath(customPath);
-            if (cp != null && !cp.isEmpty()) {
-                String dir = ensureDir(cp);
-                return dir + fileName + ".jar";
-            }
+    private static final class InstallPaths {
+        private final String targetPath;
+        private final String livePath;
+
+        private InstallPaths(String targetPath, String livePath) {
+            this.targetPath = targetPath;
+            this.livePath = livePath;
         }
-        return getString(fileName);
     }
 
     private String sanitizeCustomPath(String cp) {
@@ -469,7 +511,8 @@ public class PluginDownloader {
     public boolean downloadJenkinsPlugin(String link, String fileName, String customPath) {
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
-        String outputFilePath = resolveOutputPath(fileName, customPath);
+        InstallPaths installPaths = resolveInstallPaths(fileName, customPath);
+        String outputFilePath = installPaths.targetPath;
         String outputTempPath = outputFilePath + ".temp";
         HttpURLConnection seedConnection;
         try {
@@ -528,7 +571,7 @@ public class PluginDownloader {
                 File target = new File(outputFilePath);
                 if (UpdateOptions.debug)
                     logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-                if (shouldSkipDuplicateInstall(outTmp, target, fileName)) {
+                if (shouldSkipDuplicateInstall(outTmp, target, fileName, installPaths.livePath)) {
                     cleanupQuietly(outTmp);
                     cleanupQuietly(rawTmp);
                     return true;
@@ -1100,10 +1143,11 @@ public class PluginDownloader {
         }
 
 
-        String outputFilePath = resolveOutputPath(fileName, customPath);
+        InstallPaths installPaths = resolveInstallPaths(fileName, customPath);
+        String outputFilePath = installPaths.targetPath;
         File out = new File(outputFilePath);
         if (UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
-        if (shouldSkipDuplicateInstall(jar, out, fileName)) {
+        if (shouldSkipDuplicateInstall(jar, out, fileName, installPaths.livePath)) {
             return true;
         }
         copyFile(jar, out);
@@ -1262,7 +1306,7 @@ public class PluginDownloader {
         return true;
     }
 
-    private boolean shouldSkipDuplicateInstall(File incoming, File target, String pluginName) {
+    private boolean shouldSkipDuplicateInstall(File incoming, File target, String pluginName, String livePathOverride) {
         if (!UpdateOptions.ignoreDuplicates || incoming == null || !incoming.exists()) {
             return false;
         }
@@ -1271,12 +1315,55 @@ public class PluginDownloader {
             return true;
         }
 
-        File livePlugin = resolveLivePluginTarget(pluginName, target);
+        File livePlugin;
+        if (livePathOverride != null && !livePathOverride.trim().isEmpty()) {
+            livePlugin = new File(livePathOverride);
+            if (target != null && pathsEqual(livePlugin.toPath(), target.toPath())) {
+                livePlugin = null;
+            }
+        } else {
+            livePlugin = resolveLivePluginTarget(pluginName, target);
+        }
         if (hasSameContent(livePlugin, incoming)) {
             logDuplicateSkip(pluginName, livePlugin);
             return true;
         }
+
+        File derivedLivePlugin = null;
+        if (shouldUseDerivedLiveFallback(livePathOverride, pluginName)) {
+            derivedLivePlugin = resolveLikelyLivePluginFromUpdateTarget(target);
+            if (hasSameContent(derivedLivePlugin, incoming)) {
+                logDuplicateSkip(pluginName, derivedLivePlugin);
+                return true;
+            }
+        }
+
+        if (UpdateOptions.debug) {
+            String targetPath = target != null ? target.getAbsolutePath() : "<none>";
+            String livePath = livePlugin != null ? livePlugin.getAbsolutePath() : "<none>";
+            String derivedPath = derivedLivePlugin != null ? derivedLivePlugin.getAbsolutePath() : "<none>";
+            logger.info("[DEBUG] No duplicate match for " + pluginName + ": incoming=" + incoming.getAbsolutePath()
+                    + ", target=" + targetPath
+                    + ", live=" + livePath
+                    + ", derivedLive=" + derivedPath);
+        }
         return false;
+    }
+
+    private boolean shouldUseDerivedLiveFallback(String livePathOverride, String pluginName) {
+        if (pluginName == null || pluginName.trim().isEmpty()) {
+            return true;
+        }
+        if (livePathOverride == null || livePathOverride.trim().isEmpty()) {
+            return true;
+        }
+        try {
+            Path overridePath = Paths.get(livePathOverride).toAbsolutePath().normalize();
+            Path defaultPath = Paths.get("plugins", pluginName + ".jar").toAbsolutePath().normalize();
+            return pathsEqual(overridePath, defaultPath);
+        } catch (Throwable ignored) {
+            return true;
+        }
     }
 
     private boolean hasSameContent(File existing, File incoming) {
@@ -1318,6 +1405,47 @@ public class PluginDownloader {
             return null;
         }
         return live;
+    }
+
+    private File resolveLikelyLivePluginFromUpdateTarget(File target) {
+        if (target == null) {
+            return null;
+        }
+        Path targetPath = target.toPath().toAbsolutePath().normalize();
+        Path targetParent = targetPath.getParent();
+        if (targetParent == null) {
+            return null;
+        }
+        Path fileName = targetPath.getFileName();
+        if (fileName == null) {
+            return null;
+        }
+
+        String configured = sanitizeCustomPath(UpdateOptions.updatePath);
+        Path configuredUpdateDir = (configured != null && !configured.isEmpty())
+                ? Paths.get(configured).toAbsolutePath().normalize()
+                : null;
+        Path defaultUpdateDir = Paths.get("plugins", "update").toAbsolutePath().normalize();
+
+        if ((configuredUpdateDir != null && pathsEqual(targetParent, configuredUpdateDir))
+                || pathsEqual(targetParent, defaultUpdateDir)) {
+            Path defaultLive = Paths.get("plugins").toAbsolutePath().normalize().resolve(fileName);
+            if (!pathsEqual(defaultLive, targetPath)) {
+                return defaultLive.toFile();
+            }
+        }
+
+        Path parentName = targetParent.getFileName();
+        if (parentName != null && "update".equalsIgnoreCase(parentName.toString())) {
+            Path base = targetParent.getParent();
+            if (base != null) {
+                Path siblingLive = base.resolve(fileName).normalize();
+                if (!pathsEqual(siblingLive, targetPath)) {
+                    return siblingLive.toFile();
+                }
+            }
+        }
+        return null;
     }
 
     private boolean pathsEqual(Path left, Path right) {

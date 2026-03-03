@@ -1,6 +1,7 @@
 package common;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
@@ -35,8 +36,22 @@ public class UpdateOptions {
     public static boolean restartAfterUpdate = false;
     public static int restartDelaySec = 5;
     public static String restartMessage = "Server restarting to apply updates.";
+    public static String preRestartCommand = "";
+    public static final List<RestartAction> restartActions = Collections.synchronizedList(new ArrayList<RestartAction>());
 
 
     private UpdateOptions() {
+    }
+
+    public static final class RestartAction {
+        public final int timeToRestartSec;
+        public final String command;
+        public final String message;
+
+        public RestartAction(int timeToRestartSec, String command, String message) {
+            this.timeToRestartSec = Math.max(0, timeToRestartSec);
+            this.command = command;
+            this.message = message;
+        }
     }
 }
