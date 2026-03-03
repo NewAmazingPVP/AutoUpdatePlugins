@@ -377,12 +377,46 @@ A simple mapping of **plugin display name -> source string**, with optional sele
 ViaVersion: "https://www.spigotmc.org/resources/viaversion.19254/"
 Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
-GeyserExtension: "https://github.com/GeyserMC/Hydraulic/releases?get=.*\\.jar | plugins/Geyser-Spigot/extensions/"
-GeyserExtensionStaged: "https://github.com/GeyserMC/Hydraulic/releases?get=.*\\.jar | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
+GeyserExtension: "https://github.com/MCXboxBroadcast/Broadcaster[1] | plugins/Geyser-Spigot/extensions/"
+GeyserExtensionStaged: "https://github.com/MCXboxBroadcast/Broadcaster[1] | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
 ```
 
 > Comment out a line with `#` to temporarily disable an entry. The `/aup enable` and `/aup disable` commands toggle this
 > for you.
+> The active file on your server is `plugins/AutoUpdatePlugins/list.yml`.
+
+**Starter `list.yml` example**
+
+```yaml
+AuthMeReloaded: https://ci.codemc.io/job/AuthMe/job/AuthMeReloaded/[4]
+BlueSlimeCore: https://www.spigotmc.org/resources/blueslimecore.83189/
+Chunky: https://www.spigotmc.org/resources/chunky.81534/
+ChunkyBorder: https://www.spigotmc.org/resources/chunkyborder.84278/
+DiscordSRV: https://get.discordsrv.com/
+Dynmap: https://dev.bukkit.org/projects/dynmap
+EasyPrefix: https://www.spigotmc.org/resources/easyprefix-gui-custom-prefixes-sql-support.44580/
+EssentialsX: https://github.com/EssentialsX/Essentials
+EssentialsXChat: https://github.com/EssentialsX/Essentials[3]
+FAWE: https://ci.athion.net/job/FastAsyncWorldEdit/
+Floodgate: https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot
+Geyser-spigot: https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot
+GeyserExtension: "https://github.com/MCXboxBroadcast/Broadcaster[1] | plugins/Geyser-Spigot/extensions/"
+GeyserExtensionStaged: "https://github.com/MCXboxBroadcast/Broadcaster[1] | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
+InventoryRollbackPlus: https://www.spigotmc.org/resources/inventory-rollback-plus.85811/
+lssmp: https://www.spigotmc.org/resources/lifesteal-smp-plugin.94387/
+LuckPerms: https://www.spigotmc.org/resources/luckperms.28140/
+PlaceholderAPI: https://www.spigotmc.org/resources/placeholderapi.6245/
+PlayerStats: https://www.spigotmc.org/resources/playerstats.102347/
+ProtocolLib: https://ci.dmulloy2.net/job/ProtocolLib/
+SkinsRestorer: https://ci.codemc.io/job/SkinsRestorer/job/SkinsRestorerX-DEV/
+TAB: https://github.com/NEZNAMY/TAB
+ViewDistanceTweaks: https://www.spigotmc.org/resources/view-distance-tweaks.75164/
+Voicemod: https://modrinth.com/plugin/simple-voice-chat/
+ViaVersion-Dev: https://ci.viaversion.com/job/ViaVersion-DEV/
+ViaBackwards: https://hangar.papermc.io/ViaVersion/ViaBackwards
+Worldedit: https://dev.bukkit.org/projects/worldedit
+Worldguard: https://dev.bukkit.org/projects/worldguard
+```
 
 **Selectors you can use**
 
@@ -524,12 +558,12 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 * **Custom install folder (direct replace):**
 
   ```
-  GeyserExtension: "https://example.com/GeyserExtension.jar | plugins/Geyser-Spigot/extensions/"
+  GeyserExtension: "https://github.com/MCXboxBroadcast/Broadcaster[1] | plugins/Geyser-Spigot/extensions/"
   ```
 * **Custom install folder (stage in custom update folder):**
 
   ```
-  GeyserExtension: "https://example.com/GeyserExtension.jar | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
+  GeyserExtension: "https://github.com/MCXboxBroadcast/Broadcaster[1] | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
   ```
 * **Local file (patched jar on disk):**
 
