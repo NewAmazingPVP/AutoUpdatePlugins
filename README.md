@@ -48,7 +48,7 @@
 * **Local sources.** Point at local jar files or run scripts that output a jar path for custom/patched builds.
 * **Smart file selection.** Use `?get=<regex>`, `[N]` (pick the N-th asset), `?artifact=2` / `?index=2` / `?zip=2` for
   GitHub Actions bundles, `?prerelease=true` (or `?pre-release=true`), `?alpha=true`, `?beta=true`, `?latest=true`,
-  `?channel=Alpha`, `?autobuild=true` - mix and match to land on the exact build you need.
+  `?channel=Alpha`, `?autobuild=true`, `?branch=dev` - mix and match to land on the exact build you need.
 * **Per-entry install routing.** Override `filePath` and `updatePath` directly in each `list.yml` line, and choose
   whether that entry uses an update folder (`useUpdateFolder=true|false`).
 * **Zero-friction config evolution.** New options are **auto-added** to `config.yml` without clobbering your comments or
@@ -74,7 +74,7 @@
 
 | Source                | Release/Build Discovery | Notes / Selectors Supported                                                                                            |
 |-----------------------|-------------------------|------------------------------------------------------------------------------------------------------------------------|
-| **GitHub**            | Releases & Actions      | `[N]`, `?artifact=2`, `?index=2`, `?zip=2`, `?get=regex`, `?prerelease=true`, `?pre-release=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?autobuild=true` |
+| **GitHub**            | Releases & Actions      | `[N]`, `?artifact=2`, `?index=2`, `?zip=2`, `?get=regex`, `?prerelease=true`, `?pre-release=true`, `?alpha=true`, `?beta=true`, `?latest=true`, `?autobuild=true`, `?branch=dev` |
 | **Jenkins**           | Latest build artifacts  | `[N]`, `?get=regex`                                                                                                    |
 | **SpigotMC (Spiget)** | Resource page URL       | Auto-resolves latest                                                                                                   |
 | **dev.bukkit**        | Project page            | Auto-resolves latest                                                                                                   |
@@ -302,6 +302,7 @@ rollback:
 # - Modrinth/Hangar obey the same flags (?alpha, ?beta, ?latest) to pick non-release builds when desired.
 # - Per-entry install path override: append | plugins/SomeFolder/ (legacy) or | filePath=... | updatePath=... | useUpdateFolder=true
 # - Force source build from GitHub: append ?autobuild=true to a GitHub repo URL.
+# - Pick a non-default branch for GitHub source builds: append ?branch=dev (works with ?autobuild=true).
 
 ```
 
@@ -427,6 +428,7 @@ Worldguard: https://dev.bukkit.org/projects/worldguard
 * **`?alpha=true`**, **`?beta=true`**, **`?latest=true`** - Fine-tune release channel preference.
 * **`?channel=release|beta|alpha|latest`** - Explicit channel preference (especially useful on Hangar).
 * **`?autobuild=true`** - Force a source build on GitHub even if a jar asset exists.
+* **`?branch=<name>`** - Use a specific GitHub branch for source builds/autobuild instead of the default branch.
 
 > **Pro tip:** Combine selectors, e.g. `...?prerelease=true&get=.*spigot.*\.jar`.
 
@@ -517,6 +519,7 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
   ```
   MyActionsPlugin: "https://github.com/Owner/MyActionsPlugin/actions?alpha=true&artifact=1"
   MyActionsPluginSource: "https://github.com/Owner/MyActionsPlugin?autobuild=true"
+  MyActionsPluginDev: "https://github.com/Owner/MyActionsPlugin?autobuild=true&branch=dev"
   ```
 * **Jenkins (match shaded jar; select by index with `[N]`):**
 
@@ -603,7 +606,7 @@ this to be the default.
 A: Configure `proxy.type/host/port`. If your proxy MITM-s TLS, ensure the Java trust store has the proxy CA.
 
 **Q: Build from source didn’t trigger.**
-A: Ensure `behavior.autoCompile.enable: true` and use `?autobuild=true` or let it kick in when no jar asset exists. The
+A: Ensure `behavior.autoCompile.enable: true` and use `?autobuild=true` or let it kick in when no jar asset exists. Add `?branch=...` if you want a non-default branch. The
 server must have outbound network access.
 
 ---

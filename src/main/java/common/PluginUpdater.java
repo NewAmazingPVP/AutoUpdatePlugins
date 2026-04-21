@@ -1855,6 +1855,7 @@ public class PluginUpdater {
 
         String repoPath = null;
         boolean forceBuild = false;
+        String sourceBuildUrl = value;
         try {
             String query = null;
             int qIdx = value.indexOf('?');
@@ -1881,7 +1882,7 @@ public class PluginUpdater {
             repoPath = getGitHubRepoLocation(repoUrl);
             if (repoPath == null || repoPath.isEmpty()) {
                 logger.info("Repository path not found for: " + value);
-                return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
+                return attemptSourceBuild(repoPath, entry, sourceBuildUrl, key, false, forceBuild);
             }
 
             String regex = queryParam(query, "get");
@@ -1889,7 +1890,7 @@ public class PluginUpdater {
             boolean allowPre = githubPreference.allowsNonRelease();
 
             if (forceBuild) {
-                return attemptSourceBuild(repoPath, entry, value, key, false, true);
+                return attemptSourceBuild(repoPath, entry, sourceBuildUrl, key, false, true);
             }
 
             JsonNode releases = fetchGithubJson("https://api.github.com/repos" + repoPath + "/releases", key);
@@ -1954,7 +1955,7 @@ public class PluginUpdater {
                         logger.info("[DEBUG] No GitHub .jar asset found for " + repoPath + " - source build disabled.");
                     }
                 }
-                return attemptSourceBuild(repoPath, entry, value, key, true, forceBuild);
+                return attemptSourceBuild(repoPath, entry, sourceBuildUrl, key, true, forceBuild);
 
             }
 
@@ -1969,7 +1970,7 @@ public class PluginUpdater {
                             logger.info("[DEBUG] GitHub asset download failed for " + repoPath + " - auto-compile disabled.");
                         }
                     }
-                    return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
+                    return attemptSourceBuild(repoPath, entry, sourceBuildUrl, key, false, forceBuild);
 
                 }
                 return true;
@@ -1983,7 +1984,7 @@ public class PluginUpdater {
                                 + " for " + repoPath + " - auto-compile disabled.");
                     }
                 }
-                return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
+                return attemptSourceBuild(repoPath, entry, sourceBuildUrl, key, false, forceBuild);
 
             }
         } catch (Throwable t) {
@@ -1996,7 +1997,7 @@ public class PluginUpdater {
                             + " - auto-compile disabled.");
                 }
             }
-            return attemptSourceBuild(repoPath, entry, value, key, false, forceBuild);
+            return attemptSourceBuild(repoPath, entry, sourceBuildUrl, key, false, forceBuild);
 
         }
     }
@@ -2255,13 +2256,29 @@ public class PluginUpdater {
         if (repoPath == null || repoPath.isEmpty()) return false;
         try {
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key, cp);
+            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key, cp, extractGitHubBranch(url));
         } catch (IOException e) {
             if (UpdateOptions.debug) {
                 logger.info("[DEBUG] Source build failed for " + repoPath + ": " + e.getMessage());
             }
             return false;
         }
+    }
+
+    private String extractGitHubBranch(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return null;
+        }
+        int qIdx = url.indexOf('?');
+        if (qIdx == -1 || qIdx >= url.length() - 1) {
+            return null;
+        }
+        String branch = queryParam(url.substring(qIdx + 1), "branch");
+        if (branch == null) {
+            return null;
+        }
+        branch = branch.trim();
+        return branch.isEmpty() ? null : branch;
     }
 
     private String queryParam(String query, String key) {

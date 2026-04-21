@@ -1031,6 +1031,10 @@ public class PluginDownloader {
     }
 
     public boolean buildFromGitHubRepo(String repoPath, String fileName, String key, String customPath) throws IOException {
+        return buildFromGitHubRepo(repoPath, fileName, key, customPath, null);
+    }
+
+    public boolean buildFromGitHubRepo(String repoPath, String fileName, String key, String customPath, String branchOverride) throws IOException {
         if (repoPath == null || repoPath.isEmpty()) throw new IOException("Invalid repo path");
         if (UpdateOptions.debug) logger.info("[DEBUG] Starting GitHub build for " + repoPath);
 
@@ -1069,7 +1073,15 @@ public class PluginDownloader {
 
         if (defaultBranch == null || defaultBranch.trim().isEmpty()) defaultBranch = "main";
 
-        String[] branches = new String[]{defaultBranch, "main", "master"};
+        LinkedHashSet<String> branchCandidates = new LinkedHashSet<>();
+        if (branchOverride != null && !branchOverride.trim().isEmpty()) {
+            branchCandidates.add(branchOverride.trim());
+        }
+        branchCandidates.add(defaultBranch);
+        branchCandidates.add("main");
+        branchCandidates.add("master");
+
+        String[] branches = branchCandidates.toArray(new String[0]);
         File workDir = new File("plugins/build/" + fileName + "-" + System.currentTimeMillis());
         if (!workDir.mkdirs()) throw new IOException("Unable to create build dir: " + workDir);
 

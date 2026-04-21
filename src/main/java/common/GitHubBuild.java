@@ -3,6 +3,7 @@ package common;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,8 +34,12 @@ public final class GitHubBuild {
                 return false;
             }
             Repo ref = Repo.parse(repoUrl);
-            String def = fetchDefaultBranch(log, ref, ghToken);
-            if (def != null) ref = ref.withBranch(def);
+            if (!ref.explicitBranch) {
+                String def = fetchDefaultBranch(log, ref, ghToken);
+                if (def != null) ref = ref.withBranch(def);
+            } else if (UpdateOptions.debug) {
+                log.info("[AutoUpdatePlugins] [DEBUG] Using explicit GitHub build branch for " + ref.owner + "/" + ref.name + " = " + ref.branch);
+            }
 
             if (tryGitHubReleases(log, ref, outJar, ghToken)) return true;
 
@@ -420,23 +425,54 @@ public final class GitHubBuild {
 
     private static final class Repo {
         final String owner, name, branch;
+        final boolean explicitBranch;
 
-        Repo(String o, String n, String b) {
+        Repo(String o, String n, String b, boolean explicitBranch) {
             owner = o;
             name = n;
             branch = b;
+            this.explicitBranch = explicitBranch;
         }
 
         Repo withBranch(String b) {
-            return new Repo(owner, name, b);
+            return new Repo(owner, name, b, explicitBranch);
         }
 
         static Repo parse(String url) {
+            String branch = null;
+            int qIdx = url.indexOf('?');
+            if (qIdx != -1 && qIdx < url.length() - 1) {
+                branch = queryParam(url.substring(qIdx + 1), "branch");
+                if (branch != null) {
+                    branch = branch.trim();
+                    if (branch.isEmpty()) {
+                        branch = null;
+                    }
+                }
+            }
             String u = url.split("\\?")[0].split("#")[0];
             String[] parts = u.replace("https://", "").replace("http://", "").split("/");
             String owner = parts.length > 1 ? parts[1] : "";
             String repo = parts.length > 2 ? parts[2] : "";
-            return new Repo(owner, repo, "master");
+            return new Repo(owner, repo, branch != null ? branch : "master", branch != null);
+        }
+
+        private static String queryParam(String query, String key) {
+            if (query == null || key == null) return null;
+            for (String part : query.split("&")) {
+                int idx = part.indexOf('=');
+                String k = idx == -1 ? part : part.substring(0, idx);
+                if (!key.equalsIgnoreCase(k)) {
+                    continue;
+                }
+                String v = idx == -1 ? "" : part.substring(idx + 1);
+                try {
+                    return URLDecoder.decode(v, "UTF-8");
+                } catch (Exception ignored) {
+                    return v;
+                }
+            }
+            return null;
         }
     }
 
