@@ -48,7 +48,7 @@ public final class BungeeUpdate extends Plugin {
         ensureListFileWithExample(myFile);
         periodUpdatePlugins();
         ProxyServer.getInstance().getPluginManager().registerCommand(this, new UpdateCommand());
-        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart));
+        ProxyServer.getInstance().getPluginManager().registerCommand(this, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart, Runnable::run));
     }
 
     private void ensureListFileWithExample(File file) {

@@ -49,7 +49,7 @@ public final class SpigotUpdate extends JavaPlugin {
         periodUpdatePlugins();
         getCommand("update").setExecutor(new UpdateCommand());
         if (getCommand("aup") != null) {
-            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart);
+            AupCommand aup = new AupCommand(pluginUpdater, myFile, config, () -> cfgMgr.getString("updates.key"), cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart, task -> Bukkit.getScheduler().runTask(this, task));
             getCommand("aup").setExecutor(aup);
             getCommand("aup").setTabCompleter(aup);
         }

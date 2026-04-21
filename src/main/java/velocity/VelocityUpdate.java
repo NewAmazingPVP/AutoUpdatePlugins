@@ -96,7 +96,7 @@ public final class VelocityUpdate {
         commandManager.register(updateMeta, new UpdateCommand());
 
         CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
-        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart));
+        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart, task -> proxy.getScheduler().buildTask(this, task).schedule()));
     }
 
     private void configureRollback() {

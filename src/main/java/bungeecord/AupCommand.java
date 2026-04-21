@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
+import java.util.function.Consumer;
 
 public class AupCommand extends Command implements TabExecutor {
 
@@ -22,14 +23,16 @@ public class AupCommand extends Command implements TabExecutor {
     private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
     private final Runnable updateAllAction;
+    private final Consumer<Runnable> completionDispatcher;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction, Consumer<Runnable> completionDispatcher) {
         super("aup", "autoupdateplugins.manage", "autoupdateplugins");
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
         this.reloadAction = reloadAction;
         this.updateAllAction = updateAllAction;
+        this.completionDispatcher = completionDispatcher;
     }
 
     @Override
@@ -171,8 +174,9 @@ public class AupCommand extends Command implements TabExecutor {
         }
 
         Map<String, PluginEntry> resolved = resolveEntries(sender, selectors);
-        for (PluginEntry entry : resolved.values()) {
-            pluginUpdater.updatePlugin("waterfall", cfgMgr.getString("updates.key"), entry.name, entry.link);
+        if (!resolved.isEmpty()) {
+            pluginUpdater.updateEntries(toLinkMap(resolved), "waterfall", cfgMgr.getString("updates.key"));
+            sender.sendMessage(ChatColor.GREEN + "Installing updates for " + resolved.size() + " plugin(s)...");
         }
     }
 
@@ -181,19 +185,20 @@ public class AupCommand extends Command implements TabExecutor {
             sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
             return;
         }
+        Map<String, String> targets;
         if (selectors.length == 0) {
-            pluginUpdater.checkList(listFile, "waterfall", cfgMgr.getString("updates.key"));
-            sender.sendMessage(ChatColor.AQUA + "Update check started.");
+            targets = ListEntryLoader.loadEnabledLinks(listFile);
+        } else {
+            Map<String, PluginEntry> resolved = resolveEntries(sender, selectors);
+            targets = toLinkMap(resolved);
+        }
+        if (targets.isEmpty()) {
+            sender.sendMessage(ChatColor.YELLOW + "No plugins matched.");
             return;
         }
-
-        Map<String, PluginEntry> resolved = resolveEntries(sender, selectors);
-        for (PluginEntry entry : resolved.values()) {
-            pluginUpdater.checkPlugin("waterfall", cfgMgr.getString("updates.key"), entry.name, entry.link);
-        }
-        if (!resolved.isEmpty()) {
-            sender.sendMessage(ChatColor.AQUA + "Checking " + resolved.size() + " plugin(s) for updates.");
-        }
+        pluginUpdater.checkEntries(targets, "waterfall", cfgMgr.getString("updates.key"), summary ->
+                dispatch(() -> sendCheckSummary(sender, summary)));
+        sender.sendMessage(ChatColor.AQUA + "Update check started for " + targets.size() + " plugin(s).");
     }
 
     private void showPending(CommandSender sender) {
@@ -202,9 +207,9 @@ public class AupCommand extends Command implements TabExecutor {
             sender.sendMessage(ChatColor.YELLOW + "No pending updates.");
             return;
         }
-        sender.sendMessage(ChatColor.AQUA + "Pending updates:");
+        sender.sendMessage(ChatColor.AQUA + "Pending updates (" + pending.size() + "):");
         for (PluginUpdater.PendingUpdate update : pending.values()) {
-            sender.sendMessage(ChatColor.YELLOW + update.pluginName + ChatColor.GRAY + " -> " + update.targetPath);
+            sender.sendMessage(ChatColor.YELLOW + update.pluginName + ChatColor.GRAY + " -> /aup update " + update.pluginName);
         }
     }
 
@@ -359,6 +364,14 @@ public class AupCommand extends Command implements TabExecutor {
         return toPluginEntries(ListEntryLoader.loadList(listFile));
     }
 
+    private Map<String, String> toLinkMap(Map<String, PluginEntry> entries) {
+        LinkedHashMap<String, String> links = new LinkedHashMap<>();
+        for (PluginEntry entry : entries.values()) {
+            links.put(entry.name, entry.link);
+        }
+        return links;
+    }
+
     private Map<String, PluginEntry> toPluginEntries(ListEntryLoader.LoadedList loadedList) {
         Map<String, PluginEntry> map = new LinkedHashMap<>();
         for (ListEntryLoader.LoadedEntry entry : loadedList.entries.values()) {
@@ -419,6 +432,52 @@ public class AupCommand extends Command implements TabExecutor {
         for (int i = start; i < args.length; i++) {
             if (i > start) sb.append(' ');
             sb.append(args[i]);
+        }
+        return sb.toString();
+    }
+
+    private void dispatch(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        if (completionDispatcher != null) {
+            completionDispatcher.accept(action);
+        } else {
+            action.run();
+        }
+    }
+
+    private void sendCheckSummary(CommandSender sender, PluginUpdater.RunSummary summary) {
+        if (summary == null) {
+            sender.sendMessage(ChatColor.RED + "Check finished without a summary.");
+            return;
+        }
+        if (summary.available == 0 && summary.failed == 0) {
+            sender.sendMessage(ChatColor.GREEN + "Check complete: no updates found for " + summary.total + " plugin(s).");
+            return;
+        }
+        sender.sendMessage(ChatColor.AQUA + "Check complete: " + summary.available + " available, " + summary.unchanged + " unchanged, " + summary.failed + " failed.");
+        if (summary.available > 0) {
+            sender.sendMessage(ChatColor.YELLOW + "Available: " + summarizeNames(summary.namesFor(PluginUpdater.EntryResult.AVAILABLE)));
+            sender.sendMessage(ChatColor.GRAY + "Run /aup pending or /aup update <name|group>.");
+        }
+        if (summary.failed > 0) {
+            sender.sendMessage(ChatColor.RED + "Failed: " + summarizeNames(summary.namesFor(PluginUpdater.EntryResult.FAILED)));
+        }
+    }
+
+    private String summarizeNames(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return "none";
+        }
+        int limit = Math.min(5, names.size());
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(names.get(i));
+        }
+        if (names.size() > limit) {
+            sb.append(" +").append(names.size() - limit).append(" more");
         }
         return sb.toString();
     }

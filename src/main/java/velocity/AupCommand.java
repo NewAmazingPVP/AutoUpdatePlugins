@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
+import java.util.function.Consumer;
 
 public class AupCommand implements SimpleCommand {
 
@@ -22,13 +23,15 @@ public class AupCommand implements SimpleCommand {
     private final ConfigManager cfgMgr;
     private final Runnable reloadAction;
     private final Runnable updateAllAction;
+    private final Consumer<Runnable> completionDispatcher;
 
-    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction) {
+    public AupCommand(PluginUpdater pluginUpdater, File listFile, ConfigManager cfgMgr, Runnable reloadAction, Runnable updateAllAction, Consumer<Runnable> completionDispatcher) {
         this.pluginUpdater = pluginUpdater;
         this.listFile = listFile;
         this.cfgMgr = cfgMgr;
         this.reloadAction = reloadAction;
         this.updateAllAction = updateAllAction;
+        this.completionDispatcher = completionDispatcher;
     }
 
     @Override
@@ -176,8 +179,9 @@ public class AupCommand implements SimpleCommand {
         }
 
         Map<String, PluginEntry> resolved = resolveEntries(source, selectors);
-        for (PluginEntry entry : resolved.values()) {
-            pluginUpdater.updatePlugin("velocity", cfgMgr.getString("updates.key"), entry.name, entry.link);
+        if (!resolved.isEmpty()) {
+            pluginUpdater.updateEntries(toLinkMap(resolved), "velocity", cfgMgr.getString("updates.key"));
+            source.sendMessage(success("Installing updates for " + resolved.size() + " plugin(s)..."));
         }
     }
 
@@ -186,19 +190,20 @@ public class AupCommand implements SimpleCommand {
             source.sendMessage(error("An update is already in progress. Please wait."));
             return;
         }
+        Map<String, String> targets;
         if (selectors.length == 0) {
-            pluginUpdater.checkList(listFile, "velocity", cfgMgr.getString("updates.key"));
-            source.sendMessage(info("Update check started."));
+            targets = ListEntryLoader.loadEnabledLinks(listFile);
+        } else {
+            Map<String, PluginEntry> resolved = resolveEntries(source, selectors);
+            targets = toLinkMap(resolved);
+        }
+        if (targets.isEmpty()) {
+            source.sendMessage(Component.text("No plugins matched.").color(NamedTextColor.YELLOW));
             return;
         }
-
-        Map<String, PluginEntry> resolved = resolveEntries(source, selectors);
-        for (PluginEntry entry : resolved.values()) {
-            pluginUpdater.checkPlugin("velocity", cfgMgr.getString("updates.key"), entry.name, entry.link);
-        }
-        if (!resolved.isEmpty()) {
-            source.sendMessage(info("Checking " + resolved.size() + " plugin(s) for updates."));
-        }
+        pluginUpdater.checkEntries(targets, "velocity", cfgMgr.getString("updates.key"), summary ->
+                dispatch(() -> sendCheckSummary(source, summary)));
+        source.sendMessage(info("Update check started for " + targets.size() + " plugin(s)."));
     }
 
     private void showPending(CommandSource source) {
@@ -207,9 +212,9 @@ public class AupCommand implements SimpleCommand {
             source.sendMessage(Component.text("No pending updates.").color(NamedTextColor.YELLOW));
             return;
         }
-        source.sendMessage(info("Pending updates:"));
+        source.sendMessage(info("Pending updates (" + pending.size() + "):"));
         for (PluginUpdater.PendingUpdate update : pending.values()) {
-            source.sendMessage(Component.text(update.pluginName + " -> " + update.targetPath).color(NamedTextColor.YELLOW));
+            source.sendMessage(Component.text(update.pluginName + " -> /aup update " + update.pluginName).color(NamedTextColor.YELLOW));
         }
     }
 
@@ -360,6 +365,14 @@ public class AupCommand implements SimpleCommand {
         return toPluginEntries(ListEntryLoader.loadList(listFile));
     }
 
+    private Map<String, String> toLinkMap(Map<String, PluginEntry> entries) {
+        LinkedHashMap<String, String> links = new LinkedHashMap<>();
+        for (PluginEntry entry : entries.values()) {
+            links.put(entry.name, entry.link);
+        }
+        return links;
+    }
+
     private Map<String, PluginEntry> toPluginEntries(ListEntryLoader.LoadedList loadedList) {
         Map<String, PluginEntry> map = new LinkedHashMap<>();
         for (ListEntryLoader.LoadedEntry entry : loadedList.entries.values()) {
@@ -420,6 +433,52 @@ public class AupCommand implements SimpleCommand {
         for (int i = start; i < args.length; i++) {
             if (i > start) sb.append(' ');
             sb.append(args[i]);
+        }
+        return sb.toString();
+    }
+
+    private void dispatch(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        if (completionDispatcher != null) {
+            completionDispatcher.accept(action);
+        } else {
+            action.run();
+        }
+    }
+
+    private void sendCheckSummary(CommandSource source, PluginUpdater.RunSummary summary) {
+        if (summary == null) {
+            source.sendMessage(error("Check finished without a summary."));
+            return;
+        }
+        if (summary.available == 0 && summary.failed == 0) {
+            source.sendMessage(success("Check complete: no updates found for " + summary.total + " plugin(s)."));
+            return;
+        }
+        source.sendMessage(info("Check complete: " + summary.available + " available, " + summary.unchanged + " unchanged, " + summary.failed + " failed."));
+        if (summary.available > 0) {
+            source.sendMessage(Component.text("Available: " + summarizeNames(summary.namesFor(PluginUpdater.EntryResult.AVAILABLE))).color(NamedTextColor.YELLOW));
+            source.sendMessage(Component.text("Run /aup pending or /aup update <name|group>.").color(NamedTextColor.GRAY));
+        }
+        if (summary.failed > 0) {
+            source.sendMessage(Component.text("Failed: " + summarizeNames(summary.namesFor(PluginUpdater.EntryResult.FAILED))).color(NamedTextColor.RED));
+        }
+    }
+
+    private String summarizeNames(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return "none";
+        }
+        int limit = Math.min(5, names.size());
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(names.get(i));
+        }
+        if (names.size() > limit) {
+            sb.append(" +").append(names.size() - limit).append(" more");
         }
         return sb.toString();
     }

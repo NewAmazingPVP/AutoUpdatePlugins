@@ -47,6 +47,7 @@ public class PluginUpdater {
     private final AtomicBoolean updateApplied = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, PendingUpdate> pendingUpdates = new ConcurrentHashMap<>();
     private final ThreadLocal<ExecutionMode> executionMode = new ThreadLocal<>();
+    private final ThreadLocal<RunCollector> runCollector = new ThreadLocal<>();
     private volatile ExecutorService currentExecutor;
 
     private static final List<PendingMove> DEFERRED_MOVES = Collections.synchronizedList(new ArrayList<>());
@@ -57,9 +58,20 @@ public class PluginUpdater {
         void onComplete(boolean anyUpdateApplied);
     }
 
+    public interface RunCompletionListener {
+        void onComplete(RunSummary summary);
+    }
+
     public enum ExecutionMode {
         INSTALL,
         CHECK
+    }
+
+    public enum EntryResult {
+        AVAILABLE,
+        UNCHANGED,
+        APPLIED,
+        FAILED
     }
 
     public static final class PendingUpdate {
@@ -73,6 +85,83 @@ public class PluginUpdater {
             this.source = source;
             this.targetPath = targetPath;
             this.detectedAtMillis = detectedAtMillis;
+        }
+    }
+
+    public static final class RunSummary {
+        public final ExecutionMode mode;
+        public final int total;
+        public final int available;
+        public final int unchanged;
+        public final int applied;
+        public final int failed;
+        public final int pendingCount;
+        public final LinkedHashMap<String, EntryResult> entries;
+
+        RunSummary(ExecutionMode mode, int total, int available, int unchanged, int applied, int failed, int pendingCount, LinkedHashMap<String, EntryResult> entries) {
+            this.mode = mode;
+            this.total = total;
+            this.available = available;
+            this.unchanged = unchanged;
+            this.applied = applied;
+            this.failed = failed;
+            this.pendingCount = pendingCount;
+            this.entries = entries;
+        }
+
+        public List<String> namesFor(EntryResult result) {
+            List<String> names = new ArrayList<>();
+            for (Map.Entry<String, EntryResult> entry : entries.entrySet()) {
+                if (entry.getValue() == result) {
+                    names.add(entry.getKey());
+                }
+            }
+            return names;
+        }
+    }
+
+    private static final class RunCollector {
+        private final ExecutionMode mode;
+        private final List<String> orderedNames;
+        private final ConcurrentHashMap<String, EntryResult> results = new ConcurrentHashMap<>();
+
+        RunCollector(ExecutionMode mode, Collection<String> names) {
+            this.mode = mode;
+            this.orderedNames = new ArrayList<>(names);
+        }
+
+        void record(String pluginName, EntryResult result) {
+            if (pluginName == null || pluginName.trim().isEmpty() || result == null) {
+                return;
+            }
+            results.put(pluginName, result);
+        }
+
+        void recordIfAbsent(String pluginName, EntryResult result) {
+            if (pluginName == null || pluginName.trim().isEmpty() || result == null) {
+                return;
+            }
+            results.putIfAbsent(pluginName, result);
+        }
+
+        RunSummary snapshot(int pendingCount) {
+            LinkedHashMap<String, EntryResult> snapshot = new LinkedHashMap<>();
+            int available = 0;
+            int unchanged = 0;
+            int applied = 0;
+            int failed = 0;
+            for (String name : orderedNames) {
+                EntryResult result = results.get(name);
+                if (result == null) {
+                    continue;
+                }
+                snapshot.put(name, result);
+                if (result == EntryResult.AVAILABLE) available++;
+                else if (result == EntryResult.UNCHANGED) unchanged++;
+                else if (result == EntryResult.APPLIED) applied++;
+                else if (result == EntryResult.FAILED) failed++;
+            }
+            return new RunSummary(mode, orderedNames.size(), available, unchanged, applied, failed, pendingCount, snapshot);
         }
     }
 
@@ -110,39 +199,80 @@ public class PluginUpdater {
     }
 
     private void executeList(File myFile, String platform, String key, ExecutionMode mode, UpdateCompletionListener listener) {
-        if (!updating.compareAndSet(false, true)) {
-            logger.info("Update already running. Skipping new request.");
+        if (myFile == null || !myFile.isFile()) {
+            logger.info("List file not found. Aborting update operation.");
             if (listener != null) {
                 listener.onComplete(false);
             }
             return;
         }
+        if (myFile.length() == 0) {
+            logger.info("File is empty. Please put FileSaveName: [link to plugin]");
+            if (listener != null) {
+                listener.onComplete(false);
+            }
+            return;
+        }
+        Map<String, String> links = ListEntryLoader.loadEnabledLinks(myFile);
+        if (links == null || links.isEmpty()) {
+            logger.info("No data in file. Aborting readList operation.");
+            if (listener != null) {
+                listener.onComplete(false);
+            }
+            return;
+        }
+        executeEntries(links, platform, key, mode, listener, null);
+    }
+
+    public void updateEntries(Map<String, String> links, String platform, String key) {
+        executeEntries(links, platform, key, ExecutionMode.INSTALL, null, null);
+    }
+
+    public void checkEntries(Map<String, String> links, String platform, String key, RunCompletionListener listener) {
+        executeEntries(links, platform, key, ExecutionMode.CHECK, null, listener);
+    }
+
+    private void executeEntries(Map<String, String> links, String platform, String key, ExecutionMode mode, UpdateCompletionListener listener, RunCompletionListener runListener) {
+        LinkedHashMap<String, String> orderedLinks = new LinkedHashMap<>();
+        if (links != null) {
+            orderedLinks.putAll(links);
+        }
+        if (orderedLinks.isEmpty()) {
+            if (listener != null) {
+                listener.onComplete(false);
+            }
+            if (runListener != null) {
+                runListener.onComplete(new RunSummary(mode, 0, 0, 0, 0, 0, pendingUpdates.size(), new LinkedHashMap<String, EntryResult>()));
+            }
+            return;
+        }
+        if (!updating.compareAndSet(false, true)) {
+            logger.info("Update already running. Skipping new request.");
+            if (listener != null) {
+                listener.onComplete(false);
+            }
+            if (runListener != null) {
+                runListener.onComplete(new RunSummary(mode, orderedLinks.size(), 0, 0, 0, orderedLinks.size(), pendingUpdates.size(), new LinkedHashMap<String, EntryResult>()));
+            }
+            return;
+        }
         updateApplied.set(false);
+        RunCollector collector = (mode == ExecutionMode.CHECK || runListener != null) ? new RunCollector(mode, orderedLinks.keySet()) : null;
         pluginDownloader.setInstallListener(mode == ExecutionMode.INSTALL ? (name, path) -> {
             updateApplied.set(true);
             clearPendingUpdate(name);
         } : null);
         CompletableFuture.runAsync(() -> {
             cancelRequested.set(false);
-            if (myFile.length() == 0) {
-                logger.info("File is empty. Please put FileSaveName: [link to plugin]");
-                return;
-            }
-            Map<String, String> links;
-            links = ListEntryLoader.loadEnabledLinks(myFile);
-            if (links == null) {
-                logger.info("No data in file. Aborting readList operation.");
-                return;
-            }
             if (UpdateOptions.debug) {
-                logger.info("[DEBUG] Starting update run: entries=" + links.size() + ", parallel=" + Math.max(1, UpdateOptions.maxParallel));
+                logger.info("[DEBUG] Starting update run: entries=" + orderedLinks.size() + ", parallel=" + Math.max(1, UpdateOptions.maxParallel));
             }
             int parallel = Math.max(1, UpdateOptions.maxParallel);
             ExecutorService ex = createExecutor(parallel);
             currentExecutor = ex;
             Semaphore sem = new Semaphore(parallel);
             List<Future<?>> futures = new ArrayList<>();
-            for (Map.Entry<String, String> entry : links.entrySet()) {
+            for (Map.Entry<String, String> entry : orderedLinks.entrySet()) {
                 futures.add(ex.submit(() -> {
                     if (cancelRequested.get()) return;
                     boolean ok = false;
@@ -150,6 +280,9 @@ public class PluginUpdater {
                         sem.acquire();
                         if (cancelRequested.get()) return;
                         executionMode.set(mode);
+                        if (collector != null) {
+                            runCollector.set(collector);
+                        }
                         ok = handleUpdateEntry(platform, key, entry);
                     } catch (IOException e) {
                         ok = false;
@@ -157,6 +290,10 @@ public class PluginUpdater {
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     } finally {
+                        if (!ok && collector != null) {
+                            collector.recordIfAbsent(entry.getKey(), EntryResult.FAILED);
+                        }
+                        runCollector.remove();
                         executionMode.remove();
                         sem.release();
                     }
@@ -183,6 +320,14 @@ public class PluginUpdater {
             updating.set(false);
             cancelRequested.set(false);
             currentExecutor = null;
+            RunSummary summary = collector != null ? collector.snapshot(pendingUpdates.size()) : null;
+            if (summary != null) {
+                if (runListener != null) {
+                    runListener.onComplete(summary);
+                } else if (mode == ExecutionMode.CHECK) {
+                    logCheckSummary(summary);
+                }
+            }
             if (listener != null) {
                 listener.onComplete(updateApplied.get());
             }
@@ -191,24 +336,15 @@ public class PluginUpdater {
 
 
     public void updatePlugin(String platform, String key, String name, String link) {
-        executeSingle(platform, key, name, link, ExecutionMode.INSTALL);
+        LinkedHashMap<String, String> entries = new LinkedHashMap<>();
+        entries.put(name, link);
+        executeEntries(entries, platform, key, ExecutionMode.INSTALL, null, null);
     }
 
     public void checkPlugin(String platform, String key, String name, String link) {
-        executeSingle(platform, key, name, link, ExecutionMode.CHECK);
-    }
-
-    private void executeSingle(String platform, String key, String name, String link, ExecutionMode mode) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                executionMode.set(mode);
-                handleUpdateEntry(platform, key, new AbstractMap.SimpleEntry<>(name, link));
-            } catch (IOException e) {
-                logger.warning("Download for " + name + " was not successful: " + e.getMessage());
-            } finally {
-                executionMode.remove();
-            }
-        });
+        LinkedHashMap<String, String> entries = new LinkedHashMap<>();
+        entries.put(name, link);
+        executeEntries(entries, platform, key, ExecutionMode.CHECK, null, null);
     }
 
     public Map<String, PendingUpdate> getPendingUpdates() {
@@ -238,75 +374,6 @@ public class PluginUpdater {
         }
         logger.info("Stop requested for ongoing update run. In-flight downloads may finish or abort shortly.");
         return true;
-    }
-
-    private static Path decideInstallPath(String pluginName) {
-        return decideInstallPath(pluginName, null);
-    }
-
-    private static Path decideInstallPath(String pluginName, String customPath) {
-        EntryPathOptions options = EntryPathOptions.parse(customPath, null);
-        String entryFilePath = options.getFilePath();
-        String entryUpdatePath = options.getUpdatePath();
-        Boolean entryUseUpdateFolder = options.getUseUpdateFolder();
-
-        String configuredFilePath = UpdateOptions.filePath;
-        String effectiveFilePath = (entryFilePath != null && !entryFilePath.isEmpty()) ? entryFilePath : configuredFilePath;
-        if (effectiveFilePath != null && !effectiveFilePath.trim().isEmpty()) {
-            Path fileDir = Paths.get(effectiveFilePath.trim());
-            try {
-                Files.createDirectories(fileDir);
-            } catch (Exception ignored) {
-            }
-            Path liveJar = fileDir.resolve(pluginName + ".jar");
-
-            boolean useUpdateFolder = (entryUseUpdateFolder != null)
-                    ? entryUseUpdateFolder.booleanValue()
-                    : (entryFilePath != null && !entryFilePath.isEmpty()
-                    ? false
-                    : UpdateOptions.useUpdateFolder);
-            if (!useUpdateFolder) {
-                return liveJar;
-            }
-
-            Path updateDir;
-            if (entryUpdatePath != null && !entryUpdatePath.isEmpty()) {
-                updateDir = Paths.get(entryUpdatePath);
-            } else if (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty()) {
-                updateDir = Paths.get(UpdateOptions.updatePath);
-            } else {
-                updateDir = fileDir.resolve("update");
-            }
-            try {
-                Files.createDirectories(updateDir);
-            } catch (Exception ignored) {
-            }
-            return Files.exists(liveJar) ? updateDir.resolve(pluginName + ".jar") : liveJar;
-        }
-
-        Path pluginsDir = Paths.get("plugins");
-        Path mainJar = pluginsDir.resolve(pluginName + ".jar");
-        boolean useUpdateFolder = (entryUseUpdateFolder != null)
-                ? entryUseUpdateFolder.booleanValue()
-                : UpdateOptions.useUpdateFolder;
-        if (useUpdateFolder) {
-            Path updateDir;
-            if (entryUpdatePath != null && !entryUpdatePath.isEmpty()) {
-                updateDir = Paths.get(entryUpdatePath);
-            } else if (UpdateOptions.updatePath != null && !UpdateOptions.updatePath.isEmpty()) {
-                updateDir = Paths.get(UpdateOptions.updatePath);
-            } else {
-                updateDir = pluginsDir.resolve("update");
-            }
-            try {
-                Files.createDirectories(updateDir);
-            } catch (Exception ignored) {
-            }
-            Path updateJar = updateDir.resolve(pluginName + ".jar");
-            return Files.exists(mainJar) ? updateJar : mainJar;
-        } else {
-            return mainJar;
-        }
     }
 
     private static String extractCustomPath(String raw) {
@@ -339,6 +406,23 @@ public class PluginUpdater {
         updateApplied.set(true);
     }
 
+    private void recordStatus(String pluginName, EntryResult result) {
+        RunCollector collector = runCollector.get();
+        if (collector != null) {
+            collector.record(pluginName, result);
+        }
+    }
+
+    private void logCheckSummary(RunSummary summary) {
+        if (summary == null) {
+            return;
+        }
+        logger.info("Check complete: " + summary.available + " available, " + summary.unchanged + " unchanged, " + summary.failed + " failed.");
+        if (summary.available > 0) {
+            logger.info("Pending updates: " + String.join(", ", summary.namesFor(EntryResult.AVAILABLE)));
+        }
+    }
+
     private ExecutionMode currentExecutionMode() {
         ExecutionMode mode = executionMode.get();
         return mode != null ? mode : ExecutionMode.INSTALL;
@@ -346,7 +430,7 @@ public class PluginUpdater {
 
     private void recordPendingUpdate(String pluginName, String source, String customPath) {
         String resolvedSource = (source == null || source.trim().isEmpty()) ? "unknown" : source.trim();
-        Path target = decideInstallPath(pluginName, customPath);
+        Path target = pluginDownloader.resolveInstallTargetPath(pluginName, customPath);
         pendingUpdates.put(pluginName, new PendingUpdate(pluginName, resolvedSource, target.toAbsolutePath().normalize().toString(), System.currentTimeMillis()));
         markUpdateApplied();
     }
@@ -364,10 +448,12 @@ public class PluginUpdater {
         }
         if (result == PluginDownloader.CheckResult.AVAILABLE) {
             recordPendingUpdate(pluginName, source, customPath);
+            recordStatus(pluginName, EntryResult.AVAILABLE);
             return true;
         }
         if (result == PluginDownloader.CheckResult.UNCHANGED) {
             clearPendingUpdate(pluginName);
+            recordStatus(pluginName, EntryResult.UNCHANGED);
             return true;
         }
         return false;
@@ -380,6 +466,7 @@ public class PluginUpdater {
         boolean ok = pluginDownloader.downloadPlugin(link, entry.getKey(), key, customPath);
         if (ok) {
             clearPendingUpdate(entry.getKey());
+            recordStatus(entry.getKey(), EntryResult.APPLIED);
         }
         return ok;
     }
@@ -391,6 +478,7 @@ public class PluginUpdater {
         boolean ok = pluginDownloader.downloadJenkinsPlugin(link, entry.getKey(), customPath);
         if (ok) {
             clearPendingUpdate(entry.getKey());
+            recordStatus(entry.getKey(), EntryResult.APPLIED);
         }
         return ok;
     }
@@ -402,6 +490,7 @@ public class PluginUpdater {
         boolean ok = pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key, customPath, branchOverride);
         if (ok) {
             clearPendingUpdate(entry.getKey());
+            recordStatus(entry.getKey(), EntryResult.APPLIED);
         }
         return ok;
     }
@@ -537,6 +626,7 @@ public class PluginUpdater {
             boolean ok = pluginDownloader.installLocalFile(jarPath, pluginName, customPath);
             if (ok) {
                 clearPendingUpdate(pluginName);
+                recordStatus(pluginName, EntryResult.APPLIED);
             }
             return ok;
         } catch (IOException e) {
@@ -717,6 +807,7 @@ public class PluginUpdater {
             boolean ok = pluginDownloader.installLocalFile(localPath, entry.getKey(), customPath);
             if (ok) {
                 clearPendingUpdate(entry.getKey());
+                recordStatus(entry.getKey(), EntryResult.APPLIED);
             }
             return ok;
         } catch (IOException e) {
@@ -2396,7 +2487,7 @@ public class PluginUpdater {
             }
         }
         try {
-            Path out = decideInstallPath(entry.getKey(), cp);
+            Path out = pluginDownloader.resolveInstallTargetPath(entry.getKey(), cp);
             try {
                 Files.createDirectories(out.getParent());
             } catch (Exception ignored) {
@@ -2404,6 +2495,7 @@ public class PluginUpdater {
             if (GitHubBuild.handleGitHubBuild(logger, url, out, key)) {
                 clearPendingUpdate(entry.getKey());
                 markUpdateApplied();
+                recordStatus(entry.getKey(), EntryResult.APPLIED);
                 return true;
             }
         } catch (Throwable ignored) {
@@ -2491,20 +2583,20 @@ public class PluginUpdater {
                     String fileName = jar.getFileName() != null ? jar.getFileName().toString() : "";
                     if (fileName.isEmpty() || !fileName.toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
 
-                    Path target = normalizedPluginsDir.resolve(fileName);
                     Path jarParent = jar.getParent() != null ? jar.getParent().toAbsolutePath().normalize() : null;
                     if (jarParent != null && jarParent.equals(normalizedPluginsDir)) continue;
+                    Path target = resolveStagedUpdateTarget(jar, normalizedPluginsDir);
 
                     try {
                         Files.createDirectories(target.getParent());
                         Files.move(jar, target, StandardCopyOption.REPLACE_EXISTING);
                         if (logger != null) {
-                            logger.info("[AutoUpdatePlugins] Updated " + fileName + " from update folder.");
+                            logger.info("[AutoUpdatePlugins] Updated " + target.getFileName() + " from update folder.");
                         }
                     } catch (FileSystemException fse) {
                         if (isWindowsSharingViolation(fse)) {
                             if (logger != null) {
-                                logger.info("[AutoUpdatePlugins] " + fileName + " is currently in use; deferring update until the proxy shuts down.");
+                                logger.info("[AutoUpdatePlugins] " + target.getFileName() + " is currently in use; deferring update until the proxy shuts down.");
                             }
                             scheduleDeferredMove(logger, jar, target);
                         } else {
@@ -2524,6 +2616,13 @@ public class PluginUpdater {
                 }
             }
         }
+    }
+
+    private static Path resolveStagedUpdateTarget(Path stagedJar, Path pluginsDir) {
+        Path fallback = pluginsDir.resolve(stagedJar.getFileName()).toAbsolutePath().normalize();
+        LinkedHashSet<String> identifiers = PluginDownloader.readPluginIdentifiers(stagedJar);
+        Path matched = PluginDownloader.findPluginJarByIdentifiers(pluginsDir, identifiers);
+        return matched != null ? matched.toAbsolutePath().normalize() : fallback;
     }
 
     private static void scheduleDeferredMove(Logger logger, Path source, Path target) {
