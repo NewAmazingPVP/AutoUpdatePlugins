@@ -3,6 +3,7 @@ package velocity;
 import com.velocitypowered.api.command.CommandSource;
 import com.velocitypowered.api.command.SimpleCommand;
 import common.ConfigManager;
+import common.ListEntryLoader;
 import common.PluginUpdater;
 import common.UpdateOptions;
 import net.kyori.adventure.text.Component;
@@ -258,28 +259,9 @@ public class AupCommand implements SimpleCommand {
     }
 
     private Map<String, PluginEntry> loadEntries() {
-        List<PluginEntry> list = new ArrayList<>();
-        try {
-            List<String> lines = Files.readAllLines(listFile.toPath(), StandardCharsets.UTF_8);
-            for (String line : lines) {
-                String trimmed = line.trim();
-                boolean enabled = true;
-                if (trimmed.startsWith("#")) {
-                    enabled = false;
-                    trimmed = trimmed.substring(1).trim();
-                }
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-                int idx = trimmed.indexOf(":");
-                if (idx == -1) continue;
-                String n = trimmed.substring(0, idx).trim();
-                String link = trimmed.substring(idx + 1).trim();
-                list.add(new PluginEntry(n, link, enabled));
-            }
-        } catch (IOException ignored) {
-        }
         Map<String, PluginEntry> map = new LinkedHashMap<>();
-        for (PluginEntry e : list) {
-            map.put(e.name, e);
+        for (ListEntryLoader.LoadedEntry entry : ListEntryLoader.loadEntries(listFile).values()) {
+            map.put(entry.name, new PluginEntry(entry.name, entry.link, entry.enabled));
         }
         return map;
     }

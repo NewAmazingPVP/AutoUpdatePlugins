@@ -8,7 +8,6 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.yaml.snakeyaml.Yaml;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -85,13 +84,8 @@ public class PluginUpdater {
                 logger.info("File is empty. Please put FileSaveName: [link to plugin]");
                 return;
             }
-            Yaml yaml = new Yaml();
             Map<String, String> links;
-            try (FileReader reader = new FileReader(myFile)) {
-                links = yaml.load(reader);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            links = ListEntryLoader.loadEnabledLinks(myFile);
             if (links == null) {
                 logger.info("No data in file. Aborting readList operation.");
                 return;
@@ -256,9 +250,10 @@ public class PluginUpdater {
 
     private static String extractCustomPath(String raw) {
         if (raw == null) return null;
-        int i = raw.indexOf('|');
+        String normalized = ListEntryLoader.normalizeValue(raw);
+        int i = normalized.indexOf('|');
         if (i < 0) return null;
-        String tail = raw.substring(i + 1).trim();
+        String tail = normalized.substring(i + 1).trim();
         return tail.isEmpty() ? null : tail;
     }
 
@@ -662,7 +657,7 @@ public class PluginUpdater {
     private boolean handleUpdateEntry(String platform, String key, Map.Entry<String, String> entry) throws IOException {
         try {
             logger.info(entry.getKey() + " ---- " + entry.getValue());
-            String rawValue = entry.getValue();
+            String rawValue = ListEntryLoader.normalizeValue(entry.getValue());
             String customPath = null;
             String linkPart = rawValue;
             int pipe = rawValue != null ? rawValue.indexOf('|') : -1;

@@ -406,7 +406,7 @@ public final class SpigotUpdate extends JavaPlugin {
                 return true;
             }
             runUpdateWithRestart();
-            sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
+            sender.sendMessage(ChatColor.AQUA + "Update check started.");
             return true;
         }
     }

@@ -500,7 +500,7 @@ public final class BungeeUpdate extends Plugin {
                 return;
             }
             runUpdateWithRestart();
-            sender.sendMessage(ChatColor.AQUA + "Plugins are successfully updating!");
+            sender.sendMessage(ChatColor.AQUA + "Update check started.");
         }
     }
 

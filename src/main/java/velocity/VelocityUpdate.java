@@ -506,7 +506,7 @@ public final class VelocityUpdate {
                 return;
             }
             runUpdateWithRestart();
-            source.sendMessage(Component.text("Plugins are successfully updating!").color(NamedTextColor.AQUA));
+            source.sendMessage(Component.text("Update check started.").color(NamedTextColor.AQUA));
         }
     }
 }
