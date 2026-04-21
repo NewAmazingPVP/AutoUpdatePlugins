@@ -96,7 +96,7 @@ public final class VelocityUpdate {
         commandManager.register(updateMeta, new UpdateCommand());
 
         CommandMeta aupMeta = commandManager.metaBuilder("aup").aliases("autoupdateplugins").plugin(this).build();
-        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runUpdateWithRestart));
+        commandManager.register(aupMeta, new AupCommand(pluginUpdater, myFile, cfgMgr, this::reloadPluginConfig, this::runInstallAllWithRestart));
     }
 
     private void configureRollback() {
@@ -166,7 +166,7 @@ public final class VelocityUpdate {
                     tz,
                     (delay, task) -> proxy.getScheduler().buildTask(this, task).delay(Duration.ofSeconds(delay)).schedule(),
                     getLogger(),
-                    this::runUpdateWithRestart
+                    this::runConfiguredUpdateWithRestart
             );
         }
         if (!scheduled) {
@@ -178,12 +178,20 @@ public final class VelocityUpdate {
         long interval = cfgMgr.getInt("updates.interval");
         long bootTime = cfgMgr.getInt("updates.bootTime");
 
-        proxy.getScheduler().buildTask(this, this::runUpdateWithRestart).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
+        proxy.getScheduler().buildTask(this, this::runConfiguredUpdateWithRestart).delay(Duration.ofSeconds(bootTime)).repeat(Duration.ofMinutes(interval)).schedule();
         getLogger().info("Scheduled updates with interval: " + interval + " minutes (First run in " + bootTime + " seconds)");
     }
 
-    private void runUpdateWithRestart() {
-        pluginUpdater.readList(myFile, "velocity", cfgMgr.getString("updates.key"), anyUpdated -> {
+    private void runConfiguredUpdateWithRestart() {
+        if (UpdateOptions.manualMode) {
+            pluginUpdater.checkList(myFile, "velocity", cfgMgr.getString("updates.key"));
+            return;
+        }
+        runInstallAllWithRestart();
+    }
+
+    private void runInstallAllWithRestart() {
+        pluginUpdater.updateList(myFile, "velocity", cfgMgr.getString("updates.key"), anyUpdated -> {
             if (!UpdateOptions.restartAfterUpdate) {
                 return;
             }
@@ -376,6 +384,7 @@ public final class VelocityUpdate {
             UpdateOptions.autoCompileBranchNewerMonths = cfgMgr.getInt("behavior.autoCompile.branchNewerMonths");
             UpdateOptions.allowPreReleaseDefault = cfgMgr.getBoolean("behavior.allowPreRelease");
             UpdateOptions.useUpdateFolder = cfgMgr.getBoolean("behavior.useUpdateFolder");
+            UpdateOptions.manualMode = cfgMgr.getBoolean("behavior.manualMode");
             UpdateOptions.debug = cfgMgr.getBoolean("behavior.debug");
             UpdateOptions.restartAfterUpdate = cfgMgr.getBoolean("behavior.restartAfterUpdate");
             UpdateOptions.restartDelaySec = Math.max(0, cfgMgr.getInt("behavior.restartDelaySec"));
@@ -453,6 +462,7 @@ public final class VelocityUpdate {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
+        cfgMgr.addDefault("behavior.manualMode", false, "Check for updates without installing them automatically. Use /aup update to apply pending updates manually.");
         cfgMgr.addDefault("behavior.restartAfterUpdate", false, "Restart the proxy automatically after updates.");
         cfgMgr.addDefault("behavior.restartDelaySec", 5, "Delay in seconds before restarting after updates.");
         cfgMgr.addDefault("behavior.restartMessage", "Server restarting to apply updates.", "Broadcast message before restarting (supports {delay}).");
@@ -505,7 +515,7 @@ public final class VelocityUpdate {
                 source.sendMessage(Component.text("An update is already in progress. Please wait.").color(NamedTextColor.RED));
                 return;
             }
-            runUpdateWithRestart();
+            runConfiguredUpdateWithRestart();
             source.sendMessage(Component.text("Update check started.").color(NamedTextColor.AQUA));
         }
     }

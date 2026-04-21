@@ -49,13 +49,17 @@ public class AupCommand implements CommandExecutor, TabCompleter {
             sendHelp(sender);
             return true;
         }
-        String sub = args[0].toLowerCase();
+        String sub = args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "download":
-                download(sender, Arrays.copyOfRange(args, 1, args.length));
-                break;
             case "update":
-                update(sender, Arrays.copyOfRange(args, 1, args.length));
+                install(sender, Arrays.copyOfRange(args, 1, args.length));
+                break;
+            case "check":
+                check(sender, Arrays.copyOfRange(args, 1, args.length));
+                break;
+            case "pending":
+                showPending(sender);
                 break;
             case "debug":
                 toggleDebug(sender, Arrays.copyOfRange(args, 1, args.length));
@@ -75,9 +79,9 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 break;
             case "remove":
                 if (args.length >= 2) {
-                    removePlugin(sender, args[1]);
+                    removePlugins(sender, args[1]);
                 } else {
-                    sender.sendMessage(ChatColor.RED + "Usage: /aup remove <identifier>");
+                    sender.sendMessage(ChatColor.RED + "Usage: /aup remove <identifier|group>");
                 }
                 break;
             case "list":
@@ -94,14 +98,14 @@ public class AupCommand implements CommandExecutor, TabCompleter {
                 if (args.length >= 2) {
                     setEnabled(sender, args[1], true);
                 } else {
-                    sender.sendMessage(ChatColor.RED + "Usage: /aup enable <identifier>");
+                    sender.sendMessage(ChatColor.RED + "Usage: /aup enable <identifier|group>");
                 }
                 break;
             case "disable":
                 if (args.length >= 2) {
                     setEnabled(sender, args[1], false);
                 } else {
-                    sender.sendMessage(ChatColor.RED + "Usage: /aup disable <identifier>");
+                    sender.sendMessage(ChatColor.RED + "Usage: /aup disable <identifier|group>");
                 }
                 break;
             default:
@@ -113,16 +117,18 @@ public class AupCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage(ChatColor.AQUA + "AutoUpdatePlugins Commands:");
-        sender.sendMessage(ChatColor.AQUA + "/aup download [plugin...]" + ChatColor.GRAY + " - Download specific or all plugins");
-        sender.sendMessage(ChatColor.AQUA + "/aup update [plugin...]" + ChatColor.GRAY + " - Update plugins (same as /update)");
+        sender.sendMessage(ChatColor.AQUA + "/aup update [plugin|group...]" + ChatColor.GRAY + " - Install specific or all plugins");
+        sender.sendMessage(ChatColor.AQUA + "/aup check [plugin|group...]" + ChatColor.GRAY + " - Check for updates without installing");
+        sender.sendMessage(ChatColor.AQUA + "/aup pending" + ChatColor.GRAY + " - Show pending manual updates");
         sender.sendMessage(ChatColor.AQUA + "/aup stop" + ChatColor.GRAY + " - Stop current updating process");
         sender.sendMessage(ChatColor.AQUA + "/aup reload" + ChatColor.GRAY + " - Reload plugin configuration");
         sender.sendMessage(ChatColor.AQUA + "/aup debug <on|off|toggle|status>" + ChatColor.GRAY + " - Verbose debug logging");
         sender.sendMessage(ChatColor.AQUA + "/aup add <identifier> <link>");
-        sender.sendMessage(ChatColor.AQUA + "/aup remove <identifier>");
+        sender.sendMessage(ChatColor.AQUA + "/aup remove <identifier|group>");
         sender.sendMessage(ChatColor.AQUA + "/aup list [page]");
-        sender.sendMessage(ChatColor.AQUA + "/aup enable <identifier>");
-        sender.sendMessage(ChatColor.AQUA + "/aup disable <identifier>");
+        sender.sendMessage(ChatColor.AQUA + "/aup enable <identifier|group>");
+        sender.sendMessage(ChatColor.AQUA + "/aup disable <identifier|group>");
+        sender.sendMessage(ChatColor.GRAY + "Use group:<name> to target a group explicitly.");
     }
 
     private void stopUpdating(CommandSender sender) {
@@ -161,33 +167,57 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(ChatColor.AQUA + "Debug is now " + (next ? ChatColor.GREEN + "ON" : ChatColor.RED + "OFF"));
     }
 
-    private void download(CommandSender sender, String[] plugins) {
-        Map<String, PluginEntry> entries = loadEntries();
-        if (plugins.length == 0) {
-            if (pluginUpdater.isUpdating()) {
-                sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
-                return;
-            }
+    private void install(CommandSender sender, String[] selectors) {
+        if (pluginUpdater.isUpdating()) {
+            sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
+            return;
+        }
+        if (selectors.length == 0) {
             if (updateAllAction != null) {
                 updateAllAction.run();
             } else {
-                pluginUpdater.readList(listFile, serverPlatform(), keySupplier.get());
+                pluginUpdater.updateList(listFile, serverPlatform(), keySupplier.get());
             }
-            sender.sendMessage(ChatColor.GREEN + "Updating all plugins...");
+            sender.sendMessage(ChatColor.GREEN + "Installing all plugin updates...");
             return;
         }
-        for (String name : plugins) {
-            PluginEntry entry = entries.get(name);
-            if (entry != null) {
-                pluginUpdater.updatePlugin(serverPlatform(), keySupplier.get(), name, entry.link);
-            } else {
-                sender.sendMessage(ChatColor.RED + "Plugin " + name + " not found in list.yml");
-            }
+
+        Map<String, PluginEntry> resolved = resolveEntries(sender, selectors);
+        for (PluginEntry entry : resolved.values()) {
+            pluginUpdater.updatePlugin(serverPlatform(), keySupplier.get(), entry.name, entry.link);
         }
     }
 
-    private void update(CommandSender sender, String[] plugins) {
-        download(sender, plugins);
+    private void check(CommandSender sender, String[] selectors) {
+        if (pluginUpdater.isUpdating()) {
+            sender.sendMessage(ChatColor.RED + "An update is already in progress. Please wait.");
+            return;
+        }
+        if (selectors.length == 0) {
+            pluginUpdater.checkList(listFile, serverPlatform(), keySupplier.get());
+            sender.sendMessage(ChatColor.AQUA + "Update check started.");
+            return;
+        }
+
+        Map<String, PluginEntry> resolved = resolveEntries(sender, selectors);
+        for (PluginEntry entry : resolved.values()) {
+            pluginUpdater.checkPlugin(serverPlatform(), keySupplier.get(), entry.name, entry.link);
+        }
+        if (!resolved.isEmpty()) {
+            sender.sendMessage(ChatColor.AQUA + "Checking " + resolved.size() + " plugin(s) for updates.");
+        }
+    }
+
+    private void showPending(CommandSender sender) {
+        Map<String, PluginUpdater.PendingUpdate> pending = pluginUpdater.getPendingUpdates();
+        if (pending.isEmpty()) {
+            sender.sendMessage(ChatColor.YELLOW + "No pending updates.");
+            return;
+        }
+        sender.sendMessage(ChatColor.AQUA + "Pending updates:");
+        for (PluginUpdater.PendingUpdate update : pending.values()) {
+            sender.sendMessage(ChatColor.YELLOW + update.pluginName + ChatColor.GRAY + " -> " + update.targetPath);
+        }
     }
 
     private void addPlugin(CommandSender sender, String name, String link) {
@@ -201,25 +231,33 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    private void removePlugin(CommandSender sender, String name) {
+    private void removePlugins(CommandSender sender, String selector) {
+        Map<String, PluginEntry> resolved = resolveEntries(sender, new String[]{selector});
+        if (resolved.isEmpty()) {
+            return;
+        }
+        Set<String> names = new LinkedHashSet<>(resolved.keySet());
         try {
             List<String> lines = Files.readAllLines(listFile.toPath(), StandardCharsets.UTF_8);
-            boolean found = false;
+            boolean changed = false;
             for (Iterator<String> it = lines.iterator(); it.hasNext(); ) {
                 String line = it.next();
                 String trimmed = line.trim();
                 boolean commented = trimmed.startsWith("#");
-                if (commented) trimmed = trimmed.substring(1).trim();
-                if (trimmed.startsWith(name + ":")) {
-                    it.remove();
-                    found = true;
+                String compare = commented ? trimmed.substring(1).trim() : trimmed;
+                for (String name : names) {
+                    if (compare.startsWith(name + ":")) {
+                        it.remove();
+                        changed = true;
+                        break;
+                    }
                 }
             }
             Files.write(listFile.toPath(), lines, StandardCharsets.UTF_8);
-            if (found) {
-                sender.sendMessage(ChatColor.GREEN + "Removed " + name);
+            if (changed) {
+                sender.sendMessage(ChatColor.GREEN + "Removed " + names.size() + " plugin(s).");
             } else {
-                sender.sendMessage(ChatColor.RED + name + " not found in list.yml");
+                sender.sendMessage(ChatColor.RED + "Nothing matched in list.yml");
             }
         } catch (IOException e) {
             sender.sendMessage(ChatColor.RED + "Failed to remove plugin: " + e.getMessage());
@@ -228,55 +266,168 @@ public class AupCommand implements CommandExecutor, TabCompleter {
 
     private void listPlugins(CommandSender sender, int page) {
         List<PluginEntry> entries = new ArrayList<>(loadEntries().values());
+        if (entries.isEmpty()) {
+            sender.sendMessage(ChatColor.YELLOW + "list.yml is empty.");
+            return;
+        }
         int perPage = 8;
-        int pages = (int) Math.ceil(entries.size() / (double) perPage);
+        int pages = Math.max(1, (int) Math.ceil(entries.size() / (double) perPage));
         if (page < 1) page = 1;
         if (page > pages) page = pages;
         int start = (page - 1) * perPage;
         int end = Math.min(start + perPage, entries.size());
         sender.sendMessage(ChatColor.AQUA + "Plugins (page " + page + "/" + pages + "):");
         for (int i = start; i < end; i++) {
-            PluginEntry e = entries.get(i);
-            String color = e.enabled ? ChatColor.GREEN.toString() : ChatColor.RED.toString();
-            sender.sendMessage(color + e.name + ChatColor.GRAY + " -> " + e.link);
+            PluginEntry entry = entries.get(i);
+            String color = entry.enabled ? ChatColor.GREEN.toString() : ChatColor.RED.toString();
+            String label = entry.group != null && !entry.group.isEmpty()
+                    ? "[" + entry.group + "] " + entry.name
+                    : entry.name;
+            sender.sendMessage(color + label + ChatColor.GRAY + " -> " + entry.link);
         }
     }
 
-    private void setEnabled(CommandSender sender, String name, boolean enable) {
+    private void setEnabled(CommandSender sender, String selector, boolean enable) {
+        Map<String, PluginEntry> resolved = resolveEntries(sender, new String[]{selector});
+        if (resolved.isEmpty()) {
+            return;
+        }
+        Set<String> names = new LinkedHashSet<>(resolved.keySet());
         try {
             List<String> lines = Files.readAllLines(listFile.toPath(), StandardCharsets.UTF_8);
-            boolean found = false;
+            boolean changed = false;
             for (int i = 0; i < lines.size(); i++) {
                 String line = lines.get(i);
                 String trimmed = line.trim();
                 boolean commented = trimmed.startsWith("#");
                 String compare = commented ? trimmed.substring(1).trim() : trimmed;
-                if (compare.startsWith(name + ":")) {
-                    found = true;
-                    if (enable && commented) {
-                        lines.set(i, line.replaceFirst("#\\s*", ""));
-                    } else if (!enable && !commented) {
-                        lines.set(i, "# " + line);
+                for (String name : names) {
+                    if (compare.startsWith(name + ":")) {
+                        if (enable && commented) {
+                            lines.set(i, line.replaceFirst("#\\s*", ""));
+                            changed = true;
+                        } else if (!enable && !commented) {
+                            lines.set(i, "# " + line);
+                            changed = true;
+                        }
+                        break;
                     }
                 }
             }
             Files.write(listFile.toPath(), lines, StandardCharsets.UTF_8);
-            if (found) {
-                sender.sendMessage(ChatColor.GREEN + (enable ? "Enabled " : "Disabled ") + name);
+            if (changed) {
+                sender.sendMessage(ChatColor.GREEN + (enable ? "Enabled " : "Disabled ") + names.size() + " plugin(s).");
             } else {
-                sender.sendMessage(ChatColor.RED + name + " not found in list.yml");
+                sender.sendMessage(ChatColor.YELLOW + "No changes were needed.");
             }
         } catch (IOException e) {
             sender.sendMessage(ChatColor.RED + "Failed to modify plugin: " + e.getMessage());
         }
     }
 
+    private Map<String, PluginEntry> resolveEntries(CommandSender sender, String[] selectors) {
+        ListEntryLoader.LoadedList loadedList = ListEntryLoader.loadList(listFile);
+        Map<String, PluginEntry> entries = toPluginEntries(loadedList);
+        LinkedHashMap<String, PluginEntry> resolved = new LinkedHashMap<>();
+        for (String selector : selectors) {
+            if (!addSelectorMatches(resolved, loadedList, entries, selector)) {
+                sender.sendMessage(ChatColor.RED + "Target " + selector + " not found in list.yml");
+            }
+        }
+        return resolved;
+    }
+
+    private boolean addSelectorMatches(Map<String, PluginEntry> resolved, ListEntryLoader.LoadedList loadedList, Map<String, PluginEntry> entries, String selector) {
+        if (selector == null || selector.trim().isEmpty()) {
+            return false;
+        }
+        PluginEntry direct = findEntry(entries, selector);
+        if (direct != null) {
+            resolved.put(direct.name, direct);
+            return true;
+        }
+
+        String explicitGroup = null;
+        if (selector.regionMatches(true, 0, "group:", 0, "group:".length())) {
+            explicitGroup = selector.substring("group:".length()).trim();
+        } else if (findGroup(loadedList, selector) != null) {
+            explicitGroup = selector.trim();
+        }
+
+        if (explicitGroup == null || explicitGroup.isEmpty()) {
+            return false;
+        }
+
+        ListEntryLoader.LoadedGroup group = findGroup(loadedList, explicitGroup);
+        if (group == null) {
+            return false;
+        }
+        for (String memberName : group.memberNames) {
+            PluginEntry entry = entries.get(memberName);
+            if (entry != null) {
+                resolved.put(entry.name, entry);
+            }
+        }
+        return true;
+    }
+
     private Map<String, PluginEntry> loadEntries() {
+        return toPluginEntries(ListEntryLoader.loadList(listFile));
+    }
+
+    private Map<String, PluginEntry> toPluginEntries(ListEntryLoader.LoadedList loadedList) {
         Map<String, PluginEntry> map = new LinkedHashMap<>();
-        for (ListEntryLoader.LoadedEntry entry : ListEntryLoader.loadEntries(listFile).values()) {
-            map.put(entry.name, new PluginEntry(entry.name, entry.link, entry.enabled));
+        for (ListEntryLoader.LoadedEntry entry : loadedList.entries.values()) {
+            map.put(entry.name, new PluginEntry(entry.name, entry.link, entry.enabled, entry.group));
         }
         return map;
+    }
+
+    private PluginEntry findEntry(Map<String, PluginEntry> entries, String name) {
+        PluginEntry direct = entries.get(name);
+        if (direct != null) {
+            return direct;
+        }
+        for (PluginEntry entry : entries.values()) {
+            if (entry.name.equalsIgnoreCase(name)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private ListEntryLoader.LoadedGroup findGroup(ListEntryLoader.LoadedList loadedList, String name) {
+        ListEntryLoader.LoadedGroup direct = loadedList.groups.get(name);
+        if (direct != null) {
+            return direct;
+        }
+        for (ListEntryLoader.LoadedGroup group : loadedList.groups.values()) {
+            if (group.name.equalsIgnoreCase(name)) {
+                return group;
+            }
+        }
+        return null;
+    }
+
+    private List<String> selectorSuggestions(String current) {
+        String needle = current == null ? "" : current.toLowerCase(Locale.ROOT);
+        List<String> suggestions = new ArrayList<>();
+        ListEntryLoader.LoadedList loadedList = ListEntryLoader.loadList(listFile);
+        for (String name : loadedList.entries.keySet()) {
+            if (name.toLowerCase(Locale.ROOT).startsWith(needle)) {
+                suggestions.add(name);
+            }
+        }
+        for (String groupName : loadedList.groups.keySet()) {
+            if (groupName.toLowerCase(Locale.ROOT).startsWith(needle)) {
+                suggestions.add(groupName);
+            }
+            String explicit = "group:" + groupName;
+            if (explicit.toLowerCase(Locale.ROOT).startsWith(needle)) {
+                suggestions.add(explicit);
+            }
+        }
+        return suggestions;
     }
 
     private String joinArgs(String[] args, int start) {
@@ -292,11 +443,13 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         final String name;
         final String link;
         final boolean enabled;
+        final String group;
 
-        PluginEntry(String name, String link, boolean enabled) {
+        PluginEntry(String name, String link, boolean enabled, String group) {
             this.name = name;
             this.link = link;
             this.enabled = enabled;
+            this.group = group;
         }
     }
 
@@ -306,32 +459,35 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("autoupdateplugins.manage")) {
             return completions;
         }
-        String[] subs = {"download", "update", "stop", "reload", "add", "remove", "list", "enable", "disable", "debug"};
+        String[] subs = {"download", "update", "check", "pending", "stop", "reload", "add", "remove", "list", "enable", "disable", "debug"};
         if (args.length == 1) {
-            String current = args[0].toLowerCase();
-            for (String s : subs) {
-                if (s.startsWith(current)) completions.add(s);
+            String current = args[0].toLowerCase(Locale.ROOT);
+            for (String sub : subs) {
+                if (sub.startsWith(current)) {
+                    completions.add(sub);
+                }
             }
             return completions;
-        } else if (args.length == 2) {
-            String sub = args[0].toLowerCase();
-            if (Arrays.asList("download", "update", "remove", "enable", "disable").contains(sub)) {
-                Map<String, PluginEntry> entries = loadEntries();
-                String current = args[1].toLowerCase();
-                for (String name : entries.keySet()) {
-                    if (name.toLowerCase().startsWith(current)) completions.add(name);
-                }
+        }
+        if (args.length == 2) {
+            String sub = args[0].toLowerCase(Locale.ROOT);
+            if (Arrays.asList("download", "update", "check", "remove", "enable", "disable").contains(sub)) {
+                completions.addAll(selectorSuggestions(args[1]));
             } else if ("list".equals(sub)) {
-                int pages = (int) Math.ceil(loadEntries().size() / 8.0);
+                int pages = Math.max(1, (int) Math.ceil(loadEntries().size() / 8.0));
                 for (int i = 1; i <= pages; i++) {
-                    String p = Integer.toString(i);
-                    if (p.startsWith(args[1])) completions.add(p);
+                    String page = Integer.toString(i);
+                    if (page.startsWith(args[1])) completions.add(page);
                 }
+            }
+        } else if (args.length > 2) {
+            String sub = args[0].toLowerCase(Locale.ROOT);
+            if (Arrays.asList("download", "update", "check").contains(sub)) {
+                completions.addAll(selectorSuggestions(args[args.length - 1]));
             }
         }
         return completions;
     }
-
 
     private String serverPlatform() {
         if (hasClass("io.papermc.paper.threadedregions.RegionizedServer")
@@ -373,5 +529,4 @@ public class AupCommand implements CommandExecutor, TabCompleter {
         return text != null && needle != null
                 && text.toLowerCase(Locale.ROOT).contains(needle.toLowerCase(Locale.ROOT));
     }
-
 }

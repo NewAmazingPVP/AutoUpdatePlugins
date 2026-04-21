@@ -208,6 +208,8 @@ proxy:
 # Behavior toggles
 behavior:
   useUpdateFolder: true
+  # Check for updates without installing them automatically.
+  manualMode: false
   # Open downloaded .jar/.zip to ensure integrity before install (recommended)
   zipFileCheck: true
   # Skip replacing an existing plugin if the new jar has the same MD5
@@ -300,6 +302,7 @@ rollback:
 # - Pre-releases: set behavior.allowPreRelease: true or append ?prerelease=true on a GitHub link.
 # - Channel flags: ?beta=true, ?alpha=true, ?latest=true, or ?channel=Alpha/Beta for Hangar.
 # - Modrinth/Hangar obey the same flags (?alpha, ?beta, ?latest) to pick non-release builds when desired.
+# - Groups are supported: add `GroupName:` and indent plugin entries beneath it.
 # - Per-entry install path override: append | plugins/SomeFolder/ (legacy) or | filePath=... | updatePath=... | useUpdateFolder=true
 # - Force source build from GitHub: append ?autobuild=true to a GitHub repo URL.
 # - Pick a non-default branch for GitHub source builds: append ?branch=dev (works with ?autobuild=true).
@@ -345,6 +348,7 @@ rollback:
 * **`behavior.preRestartCommand`** - Run a console command when restart is scheduled.
 * **`behavior.restartCommands`** - Run multiple timed pre-restart commands/messages (for example at 60/30/5 seconds).
 * **`behavior.debug`** - Verbose logging toggle, also controllable via `/aup debug`.
+* **Manual workflow:** enable `behavior.manualMode` to turn scheduled runs and `/update` into check-only passes, then use `/aup pending` and `/aup update`.
 * **`rollback`** - Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
 * **`paths`** - Customize temp/staging/output locations (falls back to sane defaults).
 * **`performance`** - See [Performance Tuning Guide](#performance-tuning-guide).
@@ -380,11 +384,16 @@ Geyser: "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds
 EssentialsXChat: "https://github.com/EssentialsX/Essentials[3]"
 GeyserExtension: "https://github.com/MCXboxBroadcast/Broadcaster[1] | plugins/Geyser-Spigot/extensions/"
 GeyserExtensionStaged: "https://github.com/MCXboxBroadcast/Broadcaster[1] | filePath=plugins/Geyser-Spigot/extensions | updatePath=plugins/Geyser-Spigot/extensions/update | useUpdateFolder=true"
+
+Core:
+  LuckPerms: "https://www.spigotmc.org/resources/luckperms.28140/"
+  PlaceholderAPI: "https://www.spigotmc.org/resources/placeholderapi.6245/"
 ```
 
 > Comment out a line with `#` to temporarily disable an entry. The `/aup enable` and `/aup disable` commands toggle this
 > for you.
 > The active file on your server is `plugins/AutoUpdatePlugins/list.yml`.
+> Groups can be targeted by name in commands, or with `group:<name>` to force a group match.
 
 **Starter `list.yml` example**
 
@@ -471,16 +480,18 @@ If cron is empty, the plugin uses **`interval`** (minutes) with an initial **`bo
 
 ### Commands
 
-* **`/update`** - Trigger an update run.
-* **`/aup download [names...]`** - Update all, or only the named plugins.
-* **`/aup update [names...]`** - Alias of `download`.
+* **`/update`** - Trigger the default scheduled behavior. If `behavior.manualMode=true`, this is check-only.
+* **`/aup download [names|groups...]`** - Install all, or only the selected plugins/groups.
+* **`/aup update [names|groups...]`** - Alias of `download`.
+* **`/aup check [names|groups...]`** - Check all, or only the selected plugins/groups, without installing them.
+* **`/aup pending`** - Show updates found during check-only runs that still need a manual install.
 * **`/aup stop`** - Request to stop the current updating process.
 * **`/aup reload`** - Reload the plugin configuration.
 * **`/aup add <name> <link>`** - Add a new entry to `list.yml`.
-* **`/aup remove <name>`** - Remove an entry from `list.yml`.
+* **`/aup remove <name|group>`** - Remove one or more entries from `list.yml`.
 * **`/aup list [page]`** - View the configured plugin list.
 * **`/aup debug <on|off|toggle|status>`** - Toggle verbose logging and persist the setting.
-* **`/aup enable|disable <name>`** - Toggle an entry (comment/uncomment in `list.yml`).
+* **`/aup enable|disable <name|group>`** - Toggle one or more entries (comment/uncomment in `list.yml`).
 
 ### Permissions
 

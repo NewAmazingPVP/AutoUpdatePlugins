@@ -39,6 +39,18 @@ import java.util.zip.ZipInputStream;
 
 public class PluginDownloader {
 
+    public enum CheckResult {
+        AVAILABLE,
+        UNCHANGED,
+        FAILED
+    }
+
+    private enum TransferResult {
+        APPLIED,
+        UNCHANGED,
+        FAILED
+    }
+
     public interface InstallListener {
         void onInstall(String pluginName, Path targetPath);
     }
@@ -150,6 +162,14 @@ public class PluginDownloader {
     }
 
     public boolean downloadPlugin(String link, String fileName, String githubToken, String customPath) throws IOException {
+        return transferRemotePlugin(link, fileName, githubToken, customPath, true) != TransferResult.FAILED;
+    }
+
+    public CheckResult checkRemotePlugin(String link, String fileName, String githubToken, String customPath) throws IOException {
+        return mapCheckResult(transferRemotePlugin(link, fileName, githubToken, customPath, false));
+    }
+
+    private TransferResult transferRemotePlugin(String link, String fileName, String githubToken, String customPath, boolean installMode) throws IOException {
         String host = null;
         Semaphore hostSem = null;
         try {
@@ -192,8 +212,9 @@ public class PluginDownloader {
                     }
 
                     if (downloaded) {
-                        if (postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath)) {
-                            return true;
+                        TransferResult result = postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath, installMode);
+                        if (result != TransferResult.FAILED) {
+                            return result;
                         }
                     }
                 } catch (IOException e) {
@@ -203,19 +224,37 @@ public class PluginDownloader {
                     cleanupQuietly(new File(outputTempPath));
                 }
             }
-            return false;
+            return TransferResult.FAILED;
         } finally {
             if (hostSem != null) hostSem.release();
         }
     }
 
     public boolean installLocalFile(Path source, String fileName, String customPath) throws IOException {
+        return processLocalFile(source, fileName, customPath, true) != TransferResult.FAILED;
+    }
+
+    public CheckResult checkLocalFile(Path source, String fileName, String customPath) throws IOException {
+        return mapCheckResult(processLocalFile(source, fileName, customPath, false));
+    }
+
+    private CheckResult mapCheckResult(TransferResult result) {
+        if (result == TransferResult.APPLIED) {
+            return CheckResult.AVAILABLE;
+        }
+        if (result == TransferResult.UNCHANGED) {
+            return CheckResult.UNCHANGED;
+        }
+        return CheckResult.FAILED;
+    }
+
+    private TransferResult processLocalFile(Path source, String fileName, String customPath, boolean installMode) throws IOException {
         if (source == null) {
             throw new IOException("Local file path is null");
         }
         if (!Files.isRegularFile(source)) {
             logger.info("Local file not found: " + source);
-            return false;
+            return TransferResult.FAILED;
         }
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
@@ -230,7 +269,7 @@ public class PluginDownloader {
 
         Files.copy(source, rawTmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
         try {
-            return postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath);
+            return postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath, installMode);
         } finally {
             cleanupQuietly(new File(rawTempPath));
             cleanupQuietly(new File(outputTempPath));
@@ -306,7 +345,7 @@ public class PluginDownloader {
         return true;
     }
 
-    private boolean postProcessDownloadedFile(File rawTmp, File outTmp, String outputFilePath, String rawTempPath, String outputTempPath, String pluginName, String livePathOverride) throws IOException {
+    private TransferResult postProcessDownloadedFile(File rawTmp, File outTmp, String outputFilePath, String rawTempPath, String outputTempPath, String pluginName, String livePathOverride, boolean installMode) throws IOException {
         if (isZipFile(rawTempPath)) {
             boolean extracted = extractFirstJarFromZip(rawTempPath, outputTempPath);
             if (!extracted) {
@@ -318,7 +357,7 @@ public class PluginDownloader {
 
         if (!validateJar(outTmp)) {
             logger.warning("Downloaded file is not a valid JAR");
-            return false;
+            return TransferResult.FAILED;
         }
 
         File target = new File(outputFilePath);
@@ -327,7 +366,12 @@ public class PluginDownloader {
         if (shouldSkipDuplicateInstall(outTmp, target, pluginName, livePathOverride)) {
             cleanupQuietly(outTmp);
             cleanupQuietly(rawTmp);
-            return true;
+            return TransferResult.UNCHANGED;
+        }
+        if (!installMode) {
+            cleanupQuietly(outTmp);
+            cleanupQuietly(rawTmp);
+            return TransferResult.APPLIED;
         }
         if (UpdateOptions.rollbackEnabled) {
             try {
@@ -347,7 +391,7 @@ public class PluginDownloader {
         }
         notifyInstalled(pluginName, target.toPath());
         cleanupQuietly(rawTmp);
-        return true;
+        return TransferResult.APPLIED;
     }
 
 
@@ -512,19 +556,19 @@ public class PluginDownloader {
     }
 
     public boolean downloadJenkinsPlugin(String link, String fileName, String customPath) {
+        return transferJenkinsPlugin(link, fileName, customPath, true) != TransferResult.FAILED;
+    }
+
+    public CheckResult checkJenkinsPlugin(String link, String fileName, String customPath) {
+        return mapCheckResult(transferJenkinsPlugin(link, fileName, customPath, false));
+    }
+
+    private TransferResult transferJenkinsPlugin(String link, String fileName, String customPath, boolean installMode) {
         String tempBase = UpdateOptions.tempPath != null && !UpdateOptions.tempPath.isEmpty() ? ensureDir(UpdateOptions.tempPath) : "plugins/";
         String rawTempPath = tempBase + fileName + ".download.tmp";
         InstallPaths installPaths = resolveInstallPaths(fileName, customPath);
         String outputFilePath = installPaths.targetPath;
         String outputTempPath = outputFilePath + ".temp";
-        HttpURLConnection seedConnection;
-        try {
-            seedConnection = openConnection(link, null, false);
-        } catch (IOException e) {
-            logger.info("Failed to open connection: " + e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
 
         for (int attempt = 1; attempt <= Math.max(2, UpdateOptions.maxRetries); attempt++) {
             File rawTmp = new File(rawTempPath);
@@ -571,18 +615,10 @@ public class PluginDownloader {
                     logger.info("Checksum mismatch from server (attempt " + attempt + ")");
                     continue;
                 }
-                File target = new File(outputFilePath);
-                if (UpdateOptions.debug)
-                    logger.info("[DEBUG] Ready to install: temp=" + outTmp.getAbsolutePath() + " -> target=" + target.getAbsolutePath());
-                if (shouldSkipDuplicateInstall(outTmp, target, fileName, installPaths.livePath)) {
-                    cleanupQuietly(outTmp);
-                    cleanupQuietly(rawTmp);
-                    return true;
+                TransferResult result = postProcessDownloadedFile(rawTmp, outTmp, outputFilePath, rawTempPath, outputTempPath, fileName, installPaths.livePath, installMode);
+                if (result != TransferResult.FAILED) {
+                    return result;
                 }
-                moveReplace(outTmp, target);
-                notifyInstalled(fileName, target.toPath());
-                cleanupQuietly(rawTmp);
-                return true;
             } catch (IOException e) {
                 logger.info("Failed to download or extract plugin: " + e.getMessage());
             } finally {
@@ -590,7 +626,7 @@ public class PluginDownloader {
                 cleanupQuietly(new File(outputTempPath));
             }
         }
-        return false;
+        return TransferResult.FAILED;
     }
 
 
@@ -1035,6 +1071,14 @@ public class PluginDownloader {
     }
 
     public boolean buildFromGitHubRepo(String repoPath, String fileName, String key, String customPath, String branchOverride) throws IOException {
+        return transferBuiltGitHubRepo(repoPath, fileName, key, customPath, branchOverride, true) != TransferResult.FAILED;
+    }
+
+    public CheckResult checkBuildFromGitHubRepo(String repoPath, String fileName, String key, String customPath, String branchOverride) throws IOException {
+        return mapCheckResult(transferBuiltGitHubRepo(repoPath, fileName, key, customPath, branchOverride, false));
+    }
+
+    private TransferResult transferBuiltGitHubRepo(String repoPath, String fileName, String key, String customPath, String branchOverride, boolean installMode) throws IOException {
         if (repoPath == null || repoPath.isEmpty()) throw new IOException("Invalid repo path");
         if (UpdateOptions.debug) logger.info("[DEBUG] Starting GitHub build for " + repoPath);
 
@@ -1163,11 +1207,14 @@ public class PluginDownloader {
         File out = new File(outputFilePath);
         if (UpdateOptions.debug) logger.info("[DEBUG] Built jar selected: " + jar.getAbsolutePath());
         if (shouldSkipDuplicateInstall(jar, out, fileName, installPaths.livePath)) {
-            return true;
+            return TransferResult.UNCHANGED;
+        }
+        if (!installMode) {
+            return TransferResult.APPLIED;
         }
         copyFile(jar, out);
         notifyInstalled(fileName, out.toPath());
-        return true;
+        return TransferResult.APPLIED;
     }
 
 

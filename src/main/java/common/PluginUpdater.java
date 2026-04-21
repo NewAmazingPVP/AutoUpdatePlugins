@@ -45,6 +45,8 @@ public class PluginUpdater {
     private final AtomicBoolean updating = new AtomicBoolean(false);
     private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
     private final AtomicBoolean updateApplied = new AtomicBoolean(false);
+    private final ConcurrentHashMap<String, PendingUpdate> pendingUpdates = new ConcurrentHashMap<>();
+    private final ThreadLocal<ExecutionMode> executionMode = new ThreadLocal<>();
     private volatile ExecutorService currentExecutor;
 
     private static final List<PendingMove> DEFERRED_MOVES = Collections.synchronizedList(new ArrayList<>());
@@ -53,6 +55,25 @@ public class PluginUpdater {
 
     public interface UpdateCompletionListener {
         void onComplete(boolean anyUpdateApplied);
+    }
+
+    public enum ExecutionMode {
+        INSTALL,
+        CHECK
+    }
+
+    public static final class PendingUpdate {
+        public final String pluginName;
+        public final String source;
+        public final String targetPath;
+        public final long detectedAtMillis;
+
+        PendingUpdate(String pluginName, String source, String targetPath, long detectedAtMillis) {
+            this.pluginName = pluginName;
+            this.source = source;
+            this.targetPath = targetPath;
+            this.detectedAtMillis = detectedAtMillis;
+        }
     }
 
     public PluginUpdater(Logger logger) {
@@ -69,6 +90,26 @@ public class PluginUpdater {
     }
 
     public void readList(File myFile, String platform, String key, UpdateCompletionListener listener) {
+        executeList(myFile, platform, key, UpdateOptions.manualMode ? ExecutionMode.CHECK : ExecutionMode.INSTALL, listener);
+    }
+
+    public void updateList(File myFile, String platform, String key) {
+        updateList(myFile, platform, key, null);
+    }
+
+    public void updateList(File myFile, String platform, String key, UpdateCompletionListener listener) {
+        executeList(myFile, platform, key, ExecutionMode.INSTALL, listener);
+    }
+
+    public void checkList(File myFile, String platform, String key) {
+        checkList(myFile, platform, key, null);
+    }
+
+    public void checkList(File myFile, String platform, String key, UpdateCompletionListener listener) {
+        executeList(myFile, platform, key, ExecutionMode.CHECK, listener);
+    }
+
+    private void executeList(File myFile, String platform, String key, ExecutionMode mode, UpdateCompletionListener listener) {
         if (!updating.compareAndSet(false, true)) {
             logger.info("Update already running. Skipping new request.");
             if (listener != null) {
@@ -77,7 +118,10 @@ public class PluginUpdater {
             return;
         }
         updateApplied.set(false);
-        pluginDownloader.setInstallListener((name, path) -> updateApplied.set(true));
+        pluginDownloader.setInstallListener(mode == ExecutionMode.INSTALL ? (name, path) -> {
+            updateApplied.set(true);
+            clearPendingUpdate(name);
+        } : null);
         CompletableFuture.runAsync(() -> {
             cancelRequested.set(false);
             if (myFile.length() == 0) {
@@ -105,6 +149,7 @@ public class PluginUpdater {
                     try {
                         sem.acquire();
                         if (cancelRequested.get()) return;
+                        executionMode.set(mode);
                         ok = handleUpdateEntry(platform, key, entry);
                     } catch (IOException e) {
                         ok = false;
@@ -112,6 +157,7 @@ public class PluginUpdater {
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     } finally {
+                        executionMode.remove();
                         sem.release();
                     }
                     if (!ok) {
@@ -145,22 +191,37 @@ public class PluginUpdater {
 
 
     public void updatePlugin(String platform, String key, String name, String link) {
+        executeSingle(platform, key, name, link, ExecutionMode.INSTALL);
+    }
+
+    public void checkPlugin(String platform, String key, String name, String link) {
+        executeSingle(platform, key, name, link, ExecutionMode.CHECK);
+    }
+
+    private void executeSingle(String platform, String key, String name, String link, ExecutionMode mode) {
         CompletableFuture.runAsync(() -> {
-            ExecutorService ex = createExecutor(1);
             try {
-                ex.submit(() -> {
-                    try {
-                        handleUpdateEntry(platform, key, new AbstractMap.SimpleEntry<>(name, link));
-                    } catch (IOException e) {
-                        logger.warning("Download for " + name + " was not successful: " + e.getMessage());
-                    }
-                }).get();
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Error updating plugin " + name, e);
+                executionMode.set(mode);
+                handleUpdateEntry(platform, key, new AbstractMap.SimpleEntry<>(name, link));
+            } catch (IOException e) {
+                logger.warning("Download for " + name + " was not successful: " + e.getMessage());
             } finally {
-                ex.shutdownNow();
+                executionMode.remove();
             }
         });
+    }
+
+    public Map<String, PendingUpdate> getPendingUpdates() {
+        List<String> names = new ArrayList<>(pendingUpdates.keySet());
+        names.sort(String.CASE_INSENSITIVE_ORDER);
+        LinkedHashMap<String, PendingUpdate> snapshot = new LinkedHashMap<>();
+        for (String name : names) {
+            PendingUpdate pending = pendingUpdates.get(name);
+            if (pending != null) {
+                snapshot.put(name, pending);
+            }
+        }
+        return snapshot;
     }
 
     public boolean stopUpdates() {
@@ -276,6 +337,73 @@ public class PluginUpdater {
 
     private void markUpdateApplied() {
         updateApplied.set(true);
+    }
+
+    private ExecutionMode currentExecutionMode() {
+        ExecutionMode mode = executionMode.get();
+        return mode != null ? mode : ExecutionMode.INSTALL;
+    }
+
+    private void recordPendingUpdate(String pluginName, String source, String customPath) {
+        String resolvedSource = (source == null || source.trim().isEmpty()) ? "unknown" : source.trim();
+        Path target = decideInstallPath(pluginName, customPath);
+        pendingUpdates.put(pluginName, new PendingUpdate(pluginName, resolvedSource, target.toAbsolutePath().normalize().toString(), System.currentTimeMillis()));
+        markUpdateApplied();
+    }
+
+    private void clearPendingUpdate(String pluginName) {
+        if (pluginName == null || pluginName.trim().isEmpty()) {
+            return;
+        }
+        pendingUpdates.remove(pluginName);
+    }
+
+    private boolean handleCheckResult(String pluginName, String source, String customPath, PluginDownloader.CheckResult result) {
+        if (result == null) {
+            return false;
+        }
+        if (result == PluginDownloader.CheckResult.AVAILABLE) {
+            recordPendingUpdate(pluginName, source, customPath);
+            return true;
+        }
+        if (result == PluginDownloader.CheckResult.UNCHANGED) {
+            clearPendingUpdate(pluginName);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean handleRemoteTransfer(String link, String key, Map.Entry<String, String> entry, String customPath) throws IOException {
+        if (currentExecutionMode() == ExecutionMode.CHECK) {
+            return handleCheckResult(entry.getKey(), link, customPath, pluginDownloader.checkRemotePlugin(link, entry.getKey(), key, customPath));
+        }
+        boolean ok = pluginDownloader.downloadPlugin(link, entry.getKey(), key, customPath);
+        if (ok) {
+            clearPendingUpdate(entry.getKey());
+        }
+        return ok;
+    }
+
+    private boolean handleJenkinsTransfer(String link, Map.Entry<String, String> entry, String customPath) {
+        if (currentExecutionMode() == ExecutionMode.CHECK) {
+            return handleCheckResult(entry.getKey(), link, customPath, pluginDownloader.checkJenkinsPlugin(link, entry.getKey(), customPath));
+        }
+        boolean ok = pluginDownloader.downloadJenkinsPlugin(link, entry.getKey(), customPath);
+        if (ok) {
+            clearPendingUpdate(entry.getKey());
+        }
+        return ok;
+    }
+
+    private boolean handleBuiltRepoTransfer(String repoPath, String key, Map.Entry<String, String> entry, String customPath, String branchOverride, String sourceLabel) throws IOException {
+        if (currentExecutionMode() == ExecutionMode.CHECK) {
+            return handleCheckResult(entry.getKey(), sourceLabel, customPath, pluginDownloader.checkBuildFromGitHubRepo(repoPath, entry.getKey(), key, customPath, branchOverride));
+        }
+        boolean ok = pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key, customPath, branchOverride);
+        if (ok) {
+            clearPendingUpdate(entry.getKey());
+        }
+        return ok;
     }
 
     private boolean isScriptSource(String value) {
@@ -403,7 +531,14 @@ public class PluginUpdater {
         }
 
         try {
-            return pluginDownloader.installLocalFile(jarPath, pluginName, customPath);
+            if (currentExecutionMode() == ExecutionMode.CHECK) {
+                return handleCheckResult(pluginName, jarPath.toString(), customPath, pluginDownloader.checkLocalFile(jarPath, pluginName, customPath));
+            }
+            boolean ok = pluginDownloader.installLocalFile(jarPath, pluginName, customPath);
+            if (ok) {
+                clearPendingUpdate(pluginName);
+            }
+            return ok;
         } catch (IOException e) {
             logger.info("Failed to install script output for " + pluginName + ": " + e.getMessage());
             return false;
@@ -576,7 +711,14 @@ public class PluginUpdater {
             return false;
         }
         try {
-            return pluginDownloader.installLocalFile(localPath, entry.getKey(), customPath);
+            if (currentExecutionMode() == ExecutionMode.CHECK) {
+                return handleCheckResult(entry.getKey(), localPath.toString(), customPath, pluginDownloader.checkLocalFile(localPath, entry.getKey(), customPath));
+            }
+            boolean ok = pluginDownloader.installLocalFile(localPath, entry.getKey(), customPath);
+            if (ok) {
+                clearPendingUpdate(entry.getKey());
+            }
+            return ok;
         } catch (IOException e) {
             logger.info("Failed to install local file for " + entry.getKey() + ": " + e.getMessage());
             return false;
@@ -704,7 +846,7 @@ public class PluginUpdater {
                 return handleCurseForgeDownload(value, key, entry);
             } else {
                 try {
-                    if (pluginDownloader.downloadPlugin(value, entry.getKey(), key, customPath)) return true;
+                    if (handleRemoteTransfer(value, key, entry, customPath)) return true;
                 } catch (IOException ignored) {
                 }
                 return handleGenericPageDownload(value, key, entry);
@@ -774,7 +916,7 @@ public class PluginUpdater {
             JsonNode data = response.get("data");
             String downloadUrl = data.get("fileDownloadUrl").asText();
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(downloadUrl, key, entry, cp);
         } catch (Exception e) {
             logger.info("Failed to download plugin from blob.build: " + e.getMessage());
             return false;
@@ -817,7 +959,7 @@ public class PluginUpdater {
         String downloadUrl = String.format("https://thebusybiscuit.github.io/builds/%s/%s/master/download/%s/%s-%s.jar", owner, repo, lastBuild, repo, lastBuild);
         try {
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(downloadUrl, key, entry, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from TheBusyBiscuit builds: " + e.getMessage());
             return false;
@@ -861,7 +1003,7 @@ public class PluginUpdater {
 
             String downloadUrl = "https://hangar.papermc.io/api/v1/projects/" + projectPath + "/versions/" + latestVersion + "/" + platform.toUpperCase(Locale.ROOT) + "/download";
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(downloadUrl, key, entry, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from hangar, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
@@ -1355,7 +1497,7 @@ public class PluginUpdater {
                                     if (f.has("url")) {
                                         {
                                             String cp = extractCustomPath(entry.getValue());
-                                            return pluginDownloader.downloadPlugin(f.get("url").asText(), entry.getKey(), key, cp);
+            return handleRemoteTransfer(f.get("url").asText(), key, entry, cp);
                                         }
                                     }
                                 }
@@ -1379,7 +1521,7 @@ public class PluginUpdater {
             }
             if (fallbackFile != null) {
                 String cp = extractCustomPath(entry.getValue());
-                return pluginDownloader.downloadPlugin(fallbackFile.get("url").asText(), entry.getKey(), key, cp);
+            return handleRemoteTransfer(fallbackFile.get("url").asText(), key, entry, cp);
             }
             logger.info("Failed to pick Modrinth file for " + value + ": no suitable files found.");
             return false;
@@ -1505,7 +1647,7 @@ public class PluginUpdater {
             String jarName = repo + "-" + last + ".jar";
             String downloadUrl = String.format("https://builds.guizhanss.com/%s/%s/master/download/%s/%s", owner, repo, last, jarName);
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(downloadUrl, key, entry, cp);
         } catch (Exception e) {
             logger.info("Failed to download from guizhanss builds: " + e.getMessage());
             return false;
@@ -1518,7 +1660,7 @@ public class PluginUpdater {
                 String base = value.replaceAll("/+$", "");
                 String dUrl = base + "/download";
                 String cp = extractCustomPath(entry.getValue());
-                return pluginDownloader.downloadPlugin(dUrl, entry.getKey(), key, cp);
+                return handleRemoteTransfer(dUrl, key, entry, cp);
             }
 
             Document doc = jsoup(value).get();
@@ -1527,7 +1669,7 @@ public class PluginUpdater {
                 if (href.endsWith(".jar") || href.contains("/download") || href.contains("hangar.papermc.io") || href.contains("github.com")) {
                     if (href.endsWith(".jar")) {
                         String cp = extractCustomPath(entry.getValue());
-                        return pluginDownloader.downloadPlugin(href, entry.getKey(), key, cp);
+                        return handleRemoteTransfer(href, key, entry, cp);
                     }
                     String cp = extractCustomPath(entry.getValue());
                     String forward = (cp != null && !cp.isEmpty()) ? (href + " | " + cp) : href;
@@ -1721,7 +1863,7 @@ public class PluginUpdater {
             if (downloadUrl != null && !downloadUrl.isEmpty()) {
                 logger.info("[CF] Using LAST file downloadUrl from servermods: " + downloadUrl);
                 String cp = extractCustomPath(entry.getValue());
-                return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+                return handleRemoteTransfer(downloadUrl, key, entry, cp);
             }
 
             String fileId = latest.has("id") ? latest.get("id").asText() : null;
@@ -1729,7 +1871,7 @@ public class PluginUpdater {
                 String fallback = "https://www.curseforge.com/minecraft/bukkit-plugins/" + slug + "/download/" + fileId + "/file";
                 logger.info("[CF] Constructed redirect URL for LAST file: " + fallback);
                 String cp = extractCustomPath(entry.getValue());
-                return pluginDownloader.downloadPlugin(fallback, entry.getKey(), key, cp);
+                return handleRemoteTransfer(fallback, key, entry, cp);
             }
 
             logger.info("[CF] Could not determine a usable download URL from LAST file.");
@@ -1760,7 +1902,7 @@ public class PluginUpdater {
                         || (cd != null && cd.toLowerCase().contains(".jar"));
                 if (code >= 200 && code < 300 && indicatesBinary) {
                     String cp = extractCustomPath(entry.getValue());
-                    return pluginDownloader.downloadPlugin(value, entry.getKey(), key, cp);
+                    return handleRemoteTransfer(value, key, entry, cp);
                 }
             } catch (IOException ignored) {
             }
@@ -1770,7 +1912,7 @@ public class PluginUpdater {
                 String href = a.attr("abs:href");
                 if (href.endsWith(".jar")) {
                     String cp = extractCustomPath(entry.getValue());
-                    return pluginDownloader.downloadPlugin(href, entry.getKey(), key, cp);
+                    return handleRemoteTransfer(href, key, entry, cp);
                 }
                 if (href.contains("github.com") || href.contains("modrinth.com") || href.contains("spigotmc.org") || href.contains("hangar.papermc.io") || href.contains("builds.guizhanss.com")) {
                     String cp = extractCustomPath(entry.getValue());
@@ -1840,7 +1982,7 @@ public class PluginUpdater {
 
         try {
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(artifactUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(artifactUrl, key, entry, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right " + "format?" + e.getMessage());
             return false;
@@ -1961,7 +2103,7 @@ public class PluginUpdater {
 
             try {
                 String cp = extractCustomPath(entry.getValue());
-                boolean ok = pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+                boolean ok = handleRemoteTransfer(downloadUrl, key, entry, cp);
                 if (!ok) {
                     if (UpdateOptions.debug) {
                         if (UpdateOptions.autoCompileEnable) {
@@ -2118,7 +2260,7 @@ public class PluginUpdater {
 
         try {
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(downloadUrl, key, entry, cp);
         } catch (IOException e) {
             logger.info("Failed to download plugin from github, " + value + " , are you sure the link is correct and in the right format? " + e.getMessage());
             return false;
@@ -2130,7 +2272,7 @@ public class PluginUpdater {
             String pluginId = extractPluginIdFromLink(value);
             String downloadUrl = "https://api.spiget.org/v2/resources/" + pluginId + "/download";
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadPlugin(downloadUrl, entry.getKey(), key, cp);
+            return handleRemoteTransfer(downloadUrl, key, entry, cp);
         } catch (Exception e) {
             logger.info("Failed to download plugin from spigot, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
@@ -2141,7 +2283,7 @@ public class PluginUpdater {
         try {
             String downloadUrl = value + "lastSuccessfulBuild/artifact/*zip*/archive.zip";
             String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.downloadJenkinsPlugin(downloadUrl, entry.getKey(), cp);
+            return handleJenkinsTransfer(downloadUrl, entry, cp);
         } catch (Exception e) {
             logger.info("Failed to download plugin from jenkins, " + value + " , are you sure link is correct and in right format?" + e.getMessage());
             return false;
@@ -2240,14 +2382,27 @@ public class PluginUpdater {
             if (!UpdateOptions.autoCompileEnable) return false;
             if (noJarAsset && !UpdateOptions.autoCompileWhenNoJarAsset) return false;
         }
+        String cp = extractCustomPath(entry.getValue());
+        String branchOverride = extractGitHubBranch(url);
+        if (currentExecutionMode() == ExecutionMode.CHECK) {
+            if (repoPath == null || repoPath.isEmpty()) return false;
+            try {
+                return handleBuiltRepoTransfer(repoPath, key, entry, cp, branchOverride, url);
+            } catch (IOException e) {
+                if (UpdateOptions.debug) {
+                    logger.info("[DEBUG] Source build check failed for " + repoPath + ": " + e.getMessage());
+                }
+                return false;
+            }
+        }
         try {
-            String cp = extractCustomPath(entry.getValue());
             Path out = decideInstallPath(entry.getKey(), cp);
             try {
                 Files.createDirectories(out.getParent());
             } catch (Exception ignored) {
             }
             if (GitHubBuild.handleGitHubBuild(logger, url, out, key)) {
+                clearPendingUpdate(entry.getKey());
                 markUpdateApplied();
                 return true;
             }
@@ -2255,8 +2410,7 @@ public class PluginUpdater {
         }
         if (repoPath == null || repoPath.isEmpty()) return false;
         try {
-            String cp = extractCustomPath(entry.getValue());
-            return pluginDownloader.buildFromGitHubRepo(repoPath, entry.getKey(), key, cp, extractGitHubBranch(url));
+            return handleBuiltRepoTransfer(repoPath, key, entry, cp, branchOverride, url);
         } catch (IOException e) {
             if (UpdateOptions.debug) {
                 logger.info("[DEBUG] Source build failed for " + repoPath + ": " + e.getMessage());

@@ -27,6 +27,7 @@ public class UpdateOptions {
     public static int backoffMaxMs = 5000;
     public static List<String> userAgents = new ArrayList<>();
     public static boolean useUpdateFolder = true;
+    public static boolean manualMode = false;
     public static int maxPerHost = 3;
     public static final ConcurrentHashMap<String, Semaphore> hostSemaphores = new ConcurrentHashMap<>();
     public static boolean rollbackEnabled = false;
