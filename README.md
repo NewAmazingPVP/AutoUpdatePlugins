@@ -183,6 +183,8 @@ updates:
   # Scope: public_repo is enough for public repos.
   # Generate a token: https://github.com/settings/tokens
   key:
+  # Optional named GitHub tokens. Use ?account=name on a GitHub entry to select one.
+  githubTokens: {}
 
 # HTTP configuration (optional)
 http:
@@ -208,7 +210,9 @@ proxy:
 # Behavior toggles
 behavior:
   useUpdateFolder: true
-  # Check for updates without installing them automatically.
+  # Check for updates without installing them automatically. Scheduled manual-mode
+  # runs still check every updates.interval after updates.bootTime. Entries with
+  # ?auto=true still install during scheduled manual-mode runs.
   manualMode: false
   # Open downloaded .jar/.zip to ensure integrity before install (recommended)
   zipFileCheck: true
@@ -330,12 +334,16 @@ rollback:
 | `?latest=true`               | Same as `?prerelease=true`, but intended for explicit "always newest" behaviour      | GitHub, Modrinth, Hangar       |
 | `?channel=release|beta|alpha|latest` | Channel preference (works with Hangar channel names and release-tier preference) | Hangar, GitHub, Modrinth       |
 | `?autobuild=true`            | Trigger Gradle/Maven source builds when binaries are missing                         | GitHub                         |
+| `?branch=<name>`             | Build a specific GitHub branch instead of the default branch                         | GitHub                         |
+| `?account=<name>`            | Use `updates.githubTokens.<name>` instead of the default `updates.key`               | GitHub                         |
+| `?auto=true`                 | In manual mode, allow this entry to install during scheduled runs                    | All providers                  |
 
 **Key options explained**
 
 * **`updates.schedule.cron` + `timezone`** - When set, cron **overrides** `interval`/`bootTime`.
 * **`updates.key`** - GitHub PAT for Releases/Actions access and higher rate limits (especially useful for public repos
   under heavy use or any private repos).
+* **`updates.githubTokens`** - Optional named GitHub PATs selected per entry with `?account=name`; `updates.key` remains the fallback.
 * **`http.userAgents`** - Simple rotation to avoid brittle server-side filters.
 * **`proxy`** - Full support for HTTP/SOCKS proxies.
 * **`behavior.autoCompile`** - For GitHub repos: if there’s no release jar (or if the branch is newer than the last
@@ -348,7 +356,7 @@ rollback:
 * **`behavior.preRestartCommand`** - Run a console command when restart is scheduled.
 * **`behavior.restartCommands`** - Run multiple timed pre-restart commands/messages (for example at 60/30/5 seconds).
 * **`behavior.debug`** - Verbose logging toggle, also controllable via `/aup debug`.
-* **Manual workflow:** enable `behavior.manualMode` to turn scheduled runs and `/update` into check-only passes, then use `/aup pending` and `/aup update`.
+* **Manual workflow:** enable `behavior.manualMode` to turn scheduled runs and `/update` into check-only passes, then use `/aup pending` and `/aup update`. Scheduled manual checks still use `updates.interval`/`bootTime`; add `?auto=true` to entries that should keep installing automatically.
 * **`rollback`** - Configure automatic snapshots, retention, and log-match triggers for self-healing updates.
 * **`paths`** - Customize temp/staging/output locations (falls back to sane defaults).
 * **`performance`** - See [Performance Tuning Guide](#performance-tuning-guide).
@@ -438,6 +446,8 @@ Worldguard: https://dev.bukkit.org/projects/worldguard
 * **`?channel=release|beta|alpha|latest`** - Explicit channel preference (especially useful on Hangar).
 * **`?autobuild=true`** - Force a source build on GitHub even if a jar asset exists.
 * **`?branch=<name>`** - Use a specific GitHub branch for source builds/autobuild instead of the default branch.
+* **`?account=<name>`** - Use a named GitHub token from `updates.githubTokens`.
+* **`?auto=true`** - In manual mode, this entry still installs during scheduled runs while the rest are check-only.
 
 > **Pro tip:** Combine selectors, e.g. `...?prerelease=true&get=.*spigot.*\.jar`.
 
@@ -602,6 +612,9 @@ plugins.
 A: Add a **GitHub PAT** in `config.yml` → `updates.key`. For private repos, ensure the token has read access to
 Releases/Actions artifacts.
 
+**Q: Different GitHub repos need different tokens.**
+A: Add named tokens under `updates.githubTokens`, then add `?account=name` to the matching GitHub entry. If the account is missing, `updates.key` is used.
+
 **Q: Wrong file selected.**
 A: Add a **`?get=regex`** or use **`[N]`** to pick an asset index. Confirm the regex escapes dots (e.g., `\\.jar`).
 
@@ -619,6 +632,9 @@ A: Configure `proxy.type/host/port`. If your proxy MITM-s TLS, ensure the Java t
 **Q: Build from source didn’t trigger.**
 A: Ensure `behavior.autoCompile.enable: true` and use `?autobuild=true` or let it kick in when no jar asset exists. Add `?branch=...` if you want a non-default branch. The
 server must have outbound network access.
+
+**Q: Manual mode still checks on a schedule.**
+A: Yes. Manual mode turns scheduled runs into check-only runs using `updates.bootTime` and `updates.interval`. Add `?auto=true` to entries that should still install automatically.
 
 ---
 

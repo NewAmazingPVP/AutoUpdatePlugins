@@ -24,6 +24,8 @@ updates:
   # Scope: public_repo is enough for public repos.
   # Generate a token: https://github.com/settings/tokens
   key:
+  # Optional named GitHub tokens. Use ?account=name on a GitHub entry to select one.
+  githubTokens: {}
 
 # HTTP configuration (optional)
 http:
@@ -49,6 +51,10 @@ proxy:
 # Behavior toggles
 behavior:
   useUpdateFolder: true
+  # Check for updates without installing them automatically.
+  # Scheduled runs still check every updates.interval after updates.bootTime.
+  # Entries with ?auto=true still install during scheduled manual-mode runs.
+  manualMode: false
   # Open downloaded .jar/.zip to ensure integrity before install (recommended)
   zipFileCheck: true
   # Skip replacing an existing plugin if the new jar has the same MD5

@@ -2,7 +2,9 @@ package common;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 
@@ -39,6 +41,7 @@ public class UpdateOptions {
     public static String restartMessage = "Server restarting to apply updates.";
     public static String preRestartCommand = "";
     public static final List<RestartAction> restartActions = Collections.synchronizedList(new ArrayList<RestartAction>());
+    public static final Map<String, String> githubTokens = Collections.synchronizedMap(new LinkedHashMap<String, String>());
 
 
     private UpdateOptions() {

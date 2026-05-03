@@ -6,11 +6,18 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public final class ListEntryLoader {
+
+    public enum SuggestionMode {
+        ENABLED,
+        DISABLED,
+        ALL
+    }
 
     private ListEntryLoader() {
     }
@@ -38,14 +45,17 @@ public final class ListEntryLoader {
             if (normalizedRaw.trim().isEmpty()) continue;
 
             int indent = leadingIndent(normalizedRaw);
-            String line = normalizedRaw.trim();
-
+            String lineWithIndent = normalizedRaw.substring(Math.min(indent, normalizedRaw.length()));
             boolean enabled = true;
-            if (line.startsWith("#")) {
+            if (lineWithIndent.startsWith("#")) {
                 enabled = false;
-                line = line.substring(1).trim();
+                String commented = lineWithIndent.substring(1);
+                int commentedIndent = leadingIndent(commented);
+                indent += Math.max(0, commentedIndent - 1);
+                lineWithIndent = commented.substring(Math.min(commentedIndent, commented.length()));
             }
 
+            String line = lineWithIndent.trim();
             if (line.isEmpty() || line.startsWith("#")) {
                 continue;
             }
@@ -56,7 +66,7 @@ public final class ListEntryLoader {
             }
 
             String name = line.substring(0, idx).trim();
-            String rawValue = line.substring(idx + 1).trim();
+            String rawValue = stripInlineComment(line.substring(idx + 1)).trim();
             if (name.isEmpty()) {
                 continue;
             }
@@ -96,6 +106,13 @@ public final class ListEntryLoader {
             }
         }
 
+        Iterator<Map.Entry<String, LoadedGroup>> it = groups.entrySet().iterator();
+        while (it.hasNext()) {
+            if (it.next().getValue().memberNames.isEmpty()) {
+                it.remove();
+            }
+        }
+
         return new LoadedList(entries, groups);
     }
 
@@ -116,7 +133,7 @@ public final class ListEntryLoader {
 
     public static String normalizeValue(String value) {
         if (value == null) return "";
-        String trimmed = stripBom(value).trim();
+        String trimmed = stripInlineComment(stripBom(value)).trim();
         if (trimmed.length() >= 2) {
             char first = trimmed.charAt(0);
             char last = trimmed.charAt(trimmed.length() - 1);
@@ -125,6 +142,112 @@ public final class ListEntryLoader {
             }
         }
         return trimmed;
+    }
+
+    public static boolean isAutoUpdateEntry(String value) {
+        String normalized = normalizeValue(value);
+        int qIdx = normalized.indexOf('?');
+        if (qIdx < 0 || qIdx >= normalized.length() - 1) {
+            return false;
+        }
+        String query = normalized.substring(qIdx + 1);
+        int pipe = query.indexOf('|');
+        if (pipe >= 0) {
+            query = query.substring(0, pipe);
+        }
+        for (String part : query.split("&")) {
+            int idx = part.indexOf('=');
+            String key = idx == -1 ? part : part.substring(0, idx);
+            String val = idx == -1 ? "true" : part.substring(idx + 1);
+            if ("auto".equalsIgnoreCase(key.trim())) {
+                String lower = val.trim().toLowerCase();
+                return lower.isEmpty()
+                        || "true".equals(lower)
+                        || "yes".equals(lower)
+                        || "on".equals(lower)
+                        || "1".equals(lower);
+            }
+        }
+        return false;
+    }
+
+    public static String uncommentLine(String line) {
+        if (line == null) {
+            return null;
+        }
+        int indent = leadingIndent(line);
+        if (indent >= line.length() || line.charAt(indent) != '#') {
+            return line;
+        }
+        String prefix = line.substring(0, indent);
+        String after = line.substring(indent + 1);
+        if (after.startsWith(" ")) {
+            after = after.substring(1);
+        }
+        return prefix + after;
+    }
+
+    public static String commentLine(String line) {
+        if (line == null) {
+            return null;
+        }
+        int indent = leadingIndent(line);
+        if (indent < line.length() && line.charAt(indent) == '#') {
+            return line;
+        }
+        return line.substring(0, indent) + "# " + line.substring(indent);
+    }
+
+    public static List<String> selectorSuggestions(File listFile, String current, SuggestionMode mode) {
+        String needle = current == null ? "" : current.toLowerCase();
+        SuggestionMode effectiveMode = mode != null ? mode : SuggestionMode.ALL;
+        LoadedList loadedList = loadList(listFile);
+        List<String> suggestions = new ArrayList<>();
+
+        for (LoadedEntry entry : loadedList.entries.values()) {
+            if (!matchesMode(entry.enabled, effectiveMode)) {
+                continue;
+            }
+            if (entry.name.toLowerCase().startsWith(needle)) {
+                suggestions.add(entry.name);
+            }
+        }
+
+        for (LoadedGroup group : loadedList.groups.values()) {
+            if (!groupMatchesMode(group, loadedList.entries, effectiveMode)) {
+                continue;
+            }
+            if (group.name.toLowerCase().startsWith(needle)) {
+                suggestions.add(group.name);
+            }
+            String explicit = "group:" + group.name;
+            if (explicit.toLowerCase().startsWith(needle)) {
+                suggestions.add(explicit);
+            }
+        }
+        return suggestions;
+    }
+
+    private static boolean groupMatchesMode(LoadedGroup group, Map<String, LoadedEntry> entries, SuggestionMode mode) {
+        if (group == null || entries == null) {
+            return false;
+        }
+        if (mode == SuggestionMode.ALL) {
+            return !group.memberNames.isEmpty();
+        }
+        for (String memberName : group.memberNames) {
+            LoadedEntry entry = entries.get(memberName);
+            if (entry != null && matchesMode(entry.enabled, mode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean matchesMode(boolean enabled, SuggestionMode mode) {
+        return mode == SuggestionMode.ALL
+                || (mode == SuggestionMode.ENABLED && enabled)
+                || (mode == SuggestionMode.DISABLED && !enabled);
     }
 
     private static int leadingIndent(String value) {
@@ -148,6 +271,34 @@ public final class ListEntryLoader {
         }
         if (value.charAt(0) == '\uFEFF') {
             return value.substring(1);
+        }
+        return value;
+    }
+
+    private static String stripInlineComment(String value) {
+        if (value == null || value.isEmpty()) {
+            return value == null ? "" : value;
+        }
+        boolean inQuote = false;
+        char quote = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (inQuote) {
+                if (c == quote) {
+                    inQuote = false;
+                } else if (c == '\\' && i + 1 < value.length()) {
+                    i++;
+                }
+                continue;
+            }
+            if (c == '"' || c == '\'') {
+                inQuote = true;
+                quote = c;
+                continue;
+            }
+            if (c == '#' && (i == 0 || Character.isWhitespace(value.charAt(i - 1)))) {
+                return value.substring(0, i);
+            }
         }
         return value;
     }

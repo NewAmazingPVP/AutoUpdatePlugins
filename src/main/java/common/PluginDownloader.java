@@ -217,7 +217,7 @@ public class PluginDownloader {
                     }
 
                     if (!downloaded) {
-                        downloaded = downloadWithUrlConnection(link, githubToken, requiresAuth, rawTmp, attempt);
+                        downloaded = downloadWithUrlConnection(link, githubToken, requiresAuth, rawTmp, attempt, fileName);
                     }
 
                     if (downloaded) {
@@ -227,7 +227,7 @@ public class PluginDownloader {
                         }
                     }
                 } catch (IOException e) {
-                    logger.warning("Failed to download or extract plugin: " + e.getMessage());
+                    logger.warning("Failed to download or extract plugin " + fileName + ": " + e.getMessage());
                 } finally {
                     cleanupQuietly(new File(rawTempPath));
                     cleanupQuietly(new File(outputTempPath));
@@ -327,7 +327,7 @@ public class PluginDownloader {
         }
     }
 
-    private boolean downloadWithUrlConnection(String link, String githubToken, boolean requiresAuth, File rawTmp, int attempt) throws IOException {
+    private boolean downloadWithUrlConnection(String link, String githubToken, boolean requiresAuth, File rawTmp, int attempt, String pluginName) throws IOException {
         HttpURLConnection connection = openConnection(link, githubToken, requiresAuth);
         int code = 0;
         try {
@@ -339,7 +339,7 @@ public class PluginDownloader {
             return false;
         }
         if (!downloadWithVerification(rawTmp, connection)) {
-            logger.warning("Download failed (attempt " + attempt + ") - retrying lenient mode (old-plugin behavior)");
+            logger.warning("Download failed for " + pluginName + " (attempt " + attempt + ") - retrying lenient mode (old-plugin behavior)");
             try {
                 connection = openConnection(link, githubToken, requiresAuth);
                 return downloadLenient(rawTmp, connection);
@@ -365,7 +365,7 @@ public class PluginDownloader {
         }
 
         if (!validateJar(outTmp)) {
-            logger.warning("Downloaded file is not a valid JAR");
+            logger.warning("Downloaded file for " + pluginName + " is not a valid JAR");
             return TransferResult.FAILED;
         }
 
@@ -434,8 +434,7 @@ public class PluginDownloader {
         }
 
         Path updateDir = resolveUpdateDirectory(liveDir, customFilePath, customUpdatePath, configuredUpdatePath);
-        Path stagedName = matchedLiveJar != null ? matchedLiveJar.getFileName() : null;
-        Path stagedTarget = updateDir.resolve(stagedName != null ? stagedName.toString() : fileName + ".jar")
+        Path stagedTarget = updateDir.resolve(fileName + ".jar")
                 .toAbsolutePath()
                 .normalize();
         return new InstallPaths(stagedTarget, matchedLiveJar);
@@ -1253,6 +1252,7 @@ public class PluginDownloader {
         String[] branches = branchCandidates.toArray(new String[0]);
         File workDir = new File("plugins/build/" + fileName + "-" + System.currentTimeMillis());
         if (!workDir.mkdirs()) throw new IOException("Unable to create build dir: " + workDir);
+        try {
 
         File zipFile = new File(workDir, "repo.zip");
         boolean gotZip = false;
@@ -1315,8 +1315,8 @@ public class PluginDownloader {
             }
         }
         if (exit != 0) {
-            logger.warning("Build failed with exit code " + exit);
-            throw new IOException("Build failed with exit code " + exit);
+            logger.warning("Build failed for " + fileName + " (" + repoPath + ") with exit code " + exit);
+            throw new IOException("Build failed for " + fileName + " (" + repoPath + ") with exit code " + exit);
         }
 
 
@@ -1340,6 +1340,9 @@ public class PluginDownloader {
         copyFile(jar, out);
         notifyInstalled(fileName, out.toPath());
         return TransferResult.APPLIED;
+        } finally {
+            cleanupTreeQuietly(workDir.toPath());
+        }
     }
 
 

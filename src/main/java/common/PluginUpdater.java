@@ -228,6 +228,10 @@ public class PluginUpdater {
         executeEntries(links, platform, key, ExecutionMode.INSTALL, null, null);
     }
 
+    public void updateEntries(Map<String, String> links, String platform, String key, UpdateCompletionListener listener) {
+        executeEntries(links, platform, key, ExecutionMode.INSTALL, listener, null);
+    }
+
     public void checkEntries(Map<String, String> links, String platform, String key, RunCompletionListener listener) {
         executeEntries(links, platform, key, ExecutionMode.CHECK, null, listener);
     }
@@ -419,7 +423,13 @@ public class PluginUpdater {
         }
         logger.info("Check complete: " + summary.available + " available, " + summary.unchanged + " unchanged, " + summary.failed + " failed.");
         if (summary.available > 0) {
-            logger.info("Pending updates: " + String.join(", ", summary.namesFor(EntryResult.AVAILABLE)));
+            logger.info("Available: " + String.join(", ", summary.namesFor(EntryResult.AVAILABLE)));
+        }
+        if (summary.unchanged > 0 && UpdateOptions.debug) {
+            logger.info("[DEBUG] Unchanged: " + String.join(", ", summary.namesFor(EntryResult.UNCHANGED)));
+        }
+        if (summary.failed > 0) {
+            logger.info("Failed: " + String.join(", ", summary.namesFor(EntryResult.FAILED)));
         }
     }
 
@@ -915,32 +925,34 @@ public class PluginUpdater {
 
             value = value.replace("dev.bukkit.org/projects", "www.curseforge.com/minecraft/bukkit-plugins");
 
+            String entryKey = resolveGitHubToken(value, key);
+
             if (value.contains("blob.build")) {
-                return handleBlobBuild(value, key, entry);
+                return handleBlobBuild(value, entryKey, entry);
             } else if (value.contains("thebusybiscuit.github.io/builds")) {
-                return handleBusyBiscuitDownload(value, key, entry);
+                return handleBusyBiscuitDownload(value, entryKey, entry);
             } else if (value.contains("spigotmc.org")) {
-                return handleSpigotDownload(key, entry, value);
+                return handleSpigotDownload(entryKey, entry, value);
             } else if (value.contains("github.com")) {
-                return handleGitHubDownload(platform, key, entry, value);
+                return handleGitHubDownload(platform, entryKey, entry, value);
             } else if (value.contains("https://ci.")) {
                 return handleJenkinsDownload(key, entry, value);
             } else if (value.contains("modrinth.com")) {
-                return handleModrinthDownload(platform, key, entry, value);
+                return handleModrinthDownload(platform, entryKey, entry, value);
             } else if (value.contains("https://hangar.papermc.io/")) {
-                return handleHangarDownload(platform, key, entry, value);
+                return handleHangarDownload(platform, entryKey, entry, value);
             } else if (value.contains("builds.guizhanss.com")) {
-                return handleGuizhanssDownload(value, key, entry);
+                return handleGuizhanssDownload(value, entryKey, entry);
             } else if (value.contains("minebbs.com")) {
-                return handleMineBbsDownload(value, key, entry);
+                return handleMineBbsDownload(value, entryKey, entry);
             } else if (value.contains("curseforge.com")) {
-                return handleCurseForgeDownload(value, key, entry);
+                return handleCurseForgeDownload(value, entryKey, entry);
             } else {
                 try {
-                    if (handleRemoteTransfer(value, key, entry, customPath)) return true;
+                    if (handleRemoteTransfer(value, entryKey, entry, customPath)) return true;
                 } catch (IOException ignored) {
                 }
-                return handleGenericPageDownload(value, key, entry);
+                return handleGenericPageDownload(value, entryKey, entry);
             }
         } catch (NullPointerException ignored) {
             return false;
@@ -2536,6 +2548,36 @@ public class PluginUpdater {
             if (k.equalsIgnoreCase(key)) return decode(v);
         }
         return null;
+    }
+
+    private String resolveGitHubToken(String value, String defaultToken) {
+        if (value == null) {
+            return defaultToken;
+        }
+        int qIdx = value.indexOf('?');
+        if (qIdx == -1 || qIdx >= value.length() - 1) {
+            return defaultToken;
+        }
+        String query = value.substring(qIdx + 1);
+        int pipe = query.indexOf('|');
+        if (pipe >= 0) {
+            query = query.substring(0, pipe);
+        }
+        String account = queryParam(query, "account");
+        if (account == null || account.trim().isEmpty()) {
+            return defaultToken;
+        }
+        String token = UpdateOptions.githubTokens.get(account.trim());
+        if ((token == null || token.trim().isEmpty())) {
+            token = UpdateOptions.githubTokens.get(account.trim().toLowerCase(Locale.ROOT));
+        }
+        if (token == null || token.trim().isEmpty()) {
+            if (UpdateOptions.debug) {
+                logger.info("[DEBUG] No GitHub token configured for account '" + account + "'; using updates.key.");
+            }
+            return defaultToken;
+        }
+        return token.trim();
     }
 
     private String decode(String s) {

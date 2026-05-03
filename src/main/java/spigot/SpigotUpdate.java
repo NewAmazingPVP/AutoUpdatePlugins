@@ -22,7 +22,9 @@ import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -146,25 +148,55 @@ public final class SpigotUpdate extends JavaPlugin {
 
     private void runConfiguredUpdateWithRestart() {
         if (UpdateOptions.manualMode) {
-            pluginUpdater.checkList(myFile, serverPlatform(), cfgMgr.getString("updates.key"));
+            runManualModeSchedule();
             return;
         }
         runInstallAllWithRestart();
     }
 
-    private void runInstallAllWithRestart() {
-        pluginUpdater.updateList(myFile, serverPlatform(), cfgMgr.getString("updates.key"), anyUpdated -> {
-            if (!UpdateOptions.restartAfterUpdate) {
-                return;
+    private void runManualModeSchedule() {
+        LinkedHashMap<String, String> enabled = ListEntryLoader.loadEnabledLinks(myFile);
+        if (enabled.isEmpty()) {
+            return;
+        }
+        LinkedHashMap<String, String> automatic = new LinkedHashMap<>();
+        LinkedHashMap<String, String> manual = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : enabled.entrySet()) {
+            if (ListEntryLoader.isAutoUpdateEntry(entry.getValue())) {
+                automatic.put(entry.getKey(), entry.getValue());
+            } else {
+                manual.put(entry.getKey(), entry.getValue());
             }
-            if (!anyUpdated) {
-                if (UpdateOptions.debug) {
-                    getLogger().info("[DEBUG] No updates applied; skipping restart.");
-                }
-                return;
+        }
+        String platform = serverPlatform();
+        String key = cfgMgr.getString("updates.key");
+        if (automatic.isEmpty()) {
+            pluginUpdater.checkEntries(enabled, platform, key, null);
+            return;
+        }
+        pluginUpdater.updateEntries(automatic, platform, key, anyUpdated -> {
+            handleScheduledUpdateCompletion(anyUpdated);
+            if (!manual.isEmpty()) {
+                pluginUpdater.checkEntries(manual, platform, key, null);
             }
-            scheduleRestart();
         });
+    }
+
+    private void runInstallAllWithRestart() {
+        pluginUpdater.updateList(myFile, serverPlatform(), cfgMgr.getString("updates.key"), this::handleScheduledUpdateCompletion);
+    }
+
+    private void handleScheduledUpdateCompletion(boolean anyUpdated) {
+        if (!UpdateOptions.restartAfterUpdate) {
+            return;
+        }
+        if (!anyUpdated) {
+            if (UpdateOptions.debug) {
+                getLogger().info("[DEBUG] No updates applied; skipping restart.");
+            }
+            return;
+        }
+        scheduleRestart();
     }
 
     private void scheduleRestart() {
@@ -376,6 +408,17 @@ public final class SpigotUpdate extends JavaPlugin {
             UpdateOptions.maxPerHost = Math.max(1, config.getInt("performance.maxPerHost"));
             UpdateOptions.rollbackEnabled = config.getBoolean("rollback.enabled");
             UpdateOptions.rollbackMaxCopies = Math.max(1, config.getInt("rollback.maxBackups"));
+            UpdateOptions.githubTokens.clear();
+            org.bukkit.configuration.ConfigurationSection tokenSection = config.getConfigurationSection("updates.githubTokens");
+            if (tokenSection != null) {
+                for (String account : tokenSection.getKeys(false)) {
+                    String token = tokenSection.getString(account);
+                    if (account != null && token != null && !token.trim().isEmpty()) {
+                        UpdateOptions.githubTokens.put(account.trim(), token.trim());
+                        UpdateOptions.githubTokens.put(account.trim().toLowerCase(Locale.ROOT), token.trim());
+                    }
+                }
+            }
 
             List<Map<String, Object>> uaList = (List<Map<String, Object>>) config.getList("http.userAgents");
             UpdateOptions.userAgents.clear();
@@ -441,6 +484,7 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("updates.schedule.cron", "", "Experimental: A cron expression to schedule updates. Overrides interval and bootTime if set.");
         cfgMgr.addDefault("updates.schedule.timezone", "UTC", "The timezone for the cron schedule.");
         cfgMgr.addDefault("updates.key", "", "GitHub token for Actions/authenticated requests (optional)");
+        cfgMgr.addDefault("updates.githubTokens", new LinkedHashMap<String, String>(), "Optional named GitHub tokens. Select one per entry with ?account=name.");
 
         cfgMgr.addDefault("http.userAgent", "AutoUpdatePlugins", "HTTP User-Agent override (leave blank to auto-rotate)");
         cfgMgr.addDefault("http.headers", new ArrayList<>(), "Extra headers: list of {name, value}");
@@ -468,7 +512,7 @@ public final class SpigotUpdate extends JavaPlugin {
         cfgMgr.addDefault("behavior.autoCompile.whenNoJarAsset", true, "Build when release has no jar assets");
         cfgMgr.addDefault("behavior.autoCompile.branchNewerMonths", 6, "Build when default branch is newer by N months");
         cfgMgr.addDefault("behavior.useUpdateFolder", true, "Use the update folder for updates. This requires a server restart to apply the update. For Velocity, it may require two restarts.");
-        cfgMgr.addDefault("behavior.manualMode", false, "Check for updates without installing them automatically. Use /aup update to apply pending updates manually.");
+        cfgMgr.addDefault("behavior.manualMode", false, "Check for updates without installing them automatically. Scheduled runs still check on updates.interval; entries with ?auto=true still install.");
         cfgMgr.addDefault("behavior.restartAfterUpdate", false, "Restart the server automatically after updates.");
         cfgMgr.addDefault("behavior.restartDelaySec", 5, "Delay in seconds before restarting after updates.");
         cfgMgr.addDefault("behavior.restartMessage", "Server restarting to apply updates.", "Broadcast message before restarting (supports {delay}).");

@@ -294,10 +294,10 @@ public class AupCommand extends Command implements TabExecutor {
                 for (String name : names) {
                     if (compare.startsWith(name + ":")) {
                         if (enable && commented) {
-                            lines.set(i, line.replaceFirst("#\\s*", ""));
+                            lines.set(i, ListEntryLoader.uncommentLine(line));
                             changed = true;
                         } else if (!enable && !commented) {
-                            lines.set(i, "# " + line);
+                            lines.set(i, ListEntryLoader.commentLine(line));
                             changed = true;
                         }
                         break;
@@ -406,25 +406,8 @@ public class AupCommand extends Command implements TabExecutor {
         return null;
     }
 
-    private List<String> selectorSuggestions(String current) {
-        String needle = current == null ? "" : current.toLowerCase(Locale.ROOT);
-        List<String> suggestions = new ArrayList<>();
-        ListEntryLoader.LoadedList loadedList = ListEntryLoader.loadList(listFile);
-        for (String name : loadedList.entries.keySet()) {
-            if (name.toLowerCase(Locale.ROOT).startsWith(needle)) {
-                suggestions.add(name);
-            }
-        }
-        for (String groupName : loadedList.groups.keySet()) {
-            if (groupName.toLowerCase(Locale.ROOT).startsWith(needle)) {
-                suggestions.add(groupName);
-            }
-            String explicit = "group:" + groupName;
-            if (explicit.toLowerCase(Locale.ROOT).startsWith(needle)) {
-                suggestions.add(explicit);
-            }
-        }
-        return suggestions;
+    private List<String> selectorSuggestions(String current, ListEntryLoader.SuggestionMode mode) {
+        return ListEntryLoader.selectorSuggestions(listFile, current, mode);
     }
 
     private String joinArgs(String[] args, int start) {
@@ -496,8 +479,14 @@ public class AupCommand extends Command implements TabExecutor {
             }
         } else if (args.length == 2) {
             String sub = args[0].toLowerCase(Locale.ROOT);
-            if (Arrays.asList("download", "update", "check", "remove", "enable", "disable").contains(sub)) {
-                completions.addAll(selectorSuggestions(args[1]));
+            if (Arrays.asList("download", "update", "check").contains(sub)) {
+                completions.addAll(selectorSuggestions(args[1], ListEntryLoader.SuggestionMode.ENABLED));
+            } else if ("disable".equals(sub)) {
+                completions.addAll(selectorSuggestions(args[1], ListEntryLoader.SuggestionMode.ENABLED));
+            } else if ("enable".equals(sub)) {
+                completions.addAll(selectorSuggestions(args[1], ListEntryLoader.SuggestionMode.DISABLED));
+            } else if ("remove".equals(sub)) {
+                completions.addAll(selectorSuggestions(args[1], ListEntryLoader.SuggestionMode.ALL));
             } else if ("list".equals(sub)) {
                 int pages = Math.max(1, (int) Math.ceil(loadEntries().size() / 8.0));
                 for (int i = 1; i <= pages; i++) {
@@ -508,7 +497,7 @@ public class AupCommand extends Command implements TabExecutor {
         } else if (args.length > 2) {
             String sub = args[0].toLowerCase(Locale.ROOT);
             if (Arrays.asList("download", "update", "check").contains(sub)) {
-                completions.addAll(selectorSuggestions(args[args.length - 1]));
+                completions.addAll(selectorSuggestions(args[args.length - 1], ListEntryLoader.SuggestionMode.ENABLED));
             }
         }
         return completions;
